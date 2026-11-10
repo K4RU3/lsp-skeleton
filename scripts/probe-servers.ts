@@ -43,7 +43,7 @@ async function probe(server: ServerName): Promise<ProbeResult> {
     const readiness = await session.waitForProjectLoad();
     const loaded = performance.now();
     const symbols = await session.documentSymbols(targetFile);
-    const methodOffset = document.lines.text.indexOf("refresh(");
+    const methodOffset = document.source.text.indexOf("refresh(");
     const hoverStart = performance.now();
     const hover = await session.hover(targetFile, methodOffset);
     const hoverMs = performance.now() - hoverStart;
