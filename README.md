@@ -148,5 +148,6 @@ npm run probe     # §8 の実測（両サーバの capacity / 起動時間）
 
 ## ドキュメント
 
-- [docs/design.md](docs/design.md) — 層と境界、documentSymbol を土台にする理由、能力交渉
+- [docs/design.md](docs/design.md) — 層と境界、documentSymbol を土台にする理由、能力交渉、キャッシュの限界
 - [docs/measurements.md](docs/measurements.md) — §8 の実測と既定サーバの決定根拠
+- [docs/report.md](docs/report.md) — マイルストーンごとの完了報告（変更ファイル・コミット・実測・残課題）
