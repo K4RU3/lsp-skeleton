@@ -252,6 +252,16 @@ export class LspSession {
     return this.#options.server.name;
   }
 
+  /**
+   * PID of the language-server process this session owns.
+   *
+   * Exposed for diagnostics ("which process is this?") and for tests that
+   * verify the lifecycle contract; the session remains the only owner.
+   */
+  get serverPid(): number | undefined {
+    return this.#child.pid;
+  }
+
   get workspaceRoot(): string {
     return this.#workspaceRoot;
   }

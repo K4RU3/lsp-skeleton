@@ -1,28 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { startSession, serverSpec } from "../src/lsp/server-factory.ts";
 import { fixtureRoot } from "./helpers.ts";
-
-/** PID of the language-server child owned by this process, if one is live. */
-function ownServerPid(): number | undefined {
-  try {
-    const out = execFileSync("ps", ["-eo", "pid=,ppid=,args="], { encoding: "utf8" });
-    for (const line of out.split("\n")) {
-      const parts = line.trim().split(/\s+/);
-      const pid = Number.parseInt(parts[0] ?? "", 10);
-      const ppid = Number.parseInt(parts[1] ?? "", 10);
-      if (ppid !== process.pid) continue;
-      if (!line.includes("typescript-language-server") && !line.includes("vtsls")) continue;
-      if (Number.isFinite(pid)) return pid;
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
 
 function isAlive(pid: number): boolean {
   try {
@@ -44,14 +25,19 @@ async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<voi
 /**
  * §5.7: the session owns the server process. Disposing must not leave a
  * zombie, and a server that dies must fail pending work instead of hanging.
+ *
+ * The pid comes from the session itself: scanning `ps` for *a* server child
+ * would race with the other test files running in parallel.
  */
 test("dispose terminates the server process", async () => {
   const session = await startSession({ workspaceRoot: fixtureRoot, readinessTimeoutMs: 60_000 });
   try {
     await session.openDocument("src/app.ts");
     await session.waitForProjectLoad();
-    const pid = ownServerPid();
-    assert.ok(pid !== undefined && pid > 0, "expected a live server child of this test process");
+    const pid = session.serverPid;
+    assert.ok(pid !== undefined && pid > 0, "expected a live server child");
+    assert.equal(isAlive(pid), true);
+
     session.dispose();
     await waitFor(() => !isAlive(pid), 5_000);
     assert.equal(isAlive(pid), false, "server process must be gone after dispose");
@@ -61,11 +47,16 @@ test("dispose terminates the server process", async () => {
 });
 
 test("a killed server fails pending requests instead of hanging", async () => {
-  const session = await startSession({ workspaceRoot: fixtureRoot, readinessTimeoutMs: 60_000 });
+  const session = await startSession({
+    workspaceRoot: fixtureRoot,
+    readinessTimeoutMs: 60_000,
+    // Keep the failure fast: the point is that the request rejects at all.
+    requestTimeoutMs: 10_000,
+  });
   try {
     await session.openDocument("src/app.ts");
     await session.waitForProjectLoad();
-    const pid = ownServerPid();
+    const pid = session.serverPid;
     assert.ok(pid !== undefined, "expected a live server child");
     process.kill(pid, "SIGKILL");
     await assert.rejects(
