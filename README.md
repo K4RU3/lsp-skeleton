@@ -132,7 +132,7 @@ dsh plugin --profile web add /path/to/lsp-skeleton
 ```sh
 npm install
 npm run build
-npm test          # フィクスチャに対する受け入れテスト（33 件）
+npm test          # フィクスチャに対する受け入れテスト（46 件）
 npm run probe     # §8 の実測（両サーバの capacity / 起動時間）
 ```
 
