@@ -12,6 +12,7 @@
 import type { LspSession } from "../lsp/session.ts";
 import { QueryContext, QueryError, readinessNotes, summaryOf } from "./context.ts";
 import { collectOutgoingCalls, resolveCall } from "./dependency-resolution.ts";
+import { isImportPosition } from "../syntax/ts-syntax.ts";
 import { renderSkeleton, type SkeletonOptions } from "./skeleton.ts";
 import { flatten, type DocumentSkeleton, type SymbolNode } from "./symbols.ts";
 import type {
@@ -207,10 +208,15 @@ export class QueryEngine {
       for (const reference of await session.references(node.path, node.nameOffset, false)) {
         if (reference.path === null) continue;
         const document = await session.documentLines(reference.uri);
+        if (document === undefined) continue;
+        const relative = session.relativePath(reference.path);
+        // A reference request includes the import specifier that binds the
+        // name; those are not *call* sites and would double-count every caller.
+        if (isImportPosition(relative, document.source, reference.range)) continue;
         usages.push({
-          path: session.relativePath(reference.path),
-          line: document === undefined ? 1 : document.source.lineAt(reference.range.start),
-          text: document === undefined ? "" : document.source.slice(reference.range.start, reference.range.end),
+          path: relative,
+          line: document.source.lineAt(reference.range.start),
+          text: document.source.slice(reference.range.start, reference.range.end),
         });
       }
     }

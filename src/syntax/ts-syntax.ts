@@ -304,6 +304,20 @@ export function isExported(filePath: string, source: SourceText, range: { start:
   return modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false;
 }
 
+/** True when a byte range lies inside an import/export-from declaration. */
+export function isImportPosition(filePath: string, source: SourceText, range: { start: number; end: number }): boolean {
+  const parsed = parseTypeScript(filePath, source);
+  const node = nodeAtUtf16(parsed, source.toUtf16(range.start));
+  let current: ts.Node | undefined = node;
+  while (current !== undefined) {
+    if (ts.isImportDeclaration(current) || ts.isImportEqualsDeclaration(current) || ts.isExportDeclaration(current)) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 /** Enumerate the top-level statements of a file, in source order. */
 export function topLevelStatements(filePath: string, source: SourceText): TopLevelStatement[] {
   const parsed = parseTypeScript(filePath, source);
