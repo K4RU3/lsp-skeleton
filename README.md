@@ -30,8 +30,8 @@ tsconfig の `paths` エイリアス、オーバーロード選択、メソッ�
 ```
 
 1 セッション = 1 ワークスペース。セッションは使い捨て可能で、永続データを持たない。
-結果キャッシュをファイルに置く場合もセッションの外に置く（初版では未実装。
-セッション内のメモ化のみ）。詳細は [docs/design.md](docs/design.md)。
+結果キャッシュ（skeleton の永続化）はセッションの外に置き、ファイル内容ハッシュを
+キーにする。詳細は [docs/design.md](docs/design.md)。
 
 ## 3 つの機能
 
@@ -103,6 +103,7 @@ note (dynamic-dispatch): ... 動的呼び出しは拾えない ...
 node --experimental-strip-types src/cli.ts --root fixtures/fixture-project skeleton src/auth/session.ts
 node --experimental-strip-types src/cli.ts --root fixtures/fixture-project deps src/app.ts main
 node --experimental-strip-types src/cli.ts --root fixtures/fixture-project expand src/app.ts main
+node --experimental-strip-types src/cli.ts --root fixtures/fixture-project --cache .cache skeleton src/app.ts
 ```
 
 ### MCP
