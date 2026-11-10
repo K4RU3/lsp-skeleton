@@ -63,6 +63,7 @@ export async function createWorkspace(options: WorkspaceOptions): Promise<Worksp
   const engine = new QueryEngine(session, {
     ...(options.waitForProjectLoad === undefined ? {} : { waitForProjectLoad: options.waitForProjectLoad }),
     ...(options.readinessTimeoutMs === undefined ? {} : { readinessTimeoutMs: options.readinessTimeoutMs }),
+    ...(options.cacheDirectory === undefined ? {} : { cacheDirectory: options.cacheDirectory }),
   });
   return {
     session,

@@ -5,9 +5,17 @@
  * works on top of it so that skeleton, deps, expand and usages all see the same
  * symbol identities.
  */
+import { FileCache } from "../cache/file-cache.ts";
 import type { LspSession, ReadinessReport } from "../lsp/session.ts";
+import { SourceText } from "./source-text.ts";
 import { buildSymbolTree, findSymbol, flatten, isFunctionLike, type DocumentSkeleton, type SymbolNode } from "./symbols.ts";
 import type { QueryEngineOptions, QueryNote, SymbolSummary } from "./types.ts";
+
+/** Serialisable part of a {@link DocumentSkeleton} (everything but the text). */
+interface CachedTree {
+  symbols: SymbolNode[];
+  globals: Array<{ range: { start: number; end: number }; lines: number }>;
+}
 
 /** Error raised for a bad selector; carries a machine-readable code. */
 export class QueryError extends Error {
@@ -23,11 +31,19 @@ export class QueryContext {
   readonly #session: LspSession;
   readonly #options: QueryEngineOptions;
   readonly #trees = new Map<string, { text: string; tree: DocumentSkeleton }>();
+  readonly #cache: FileCache | undefined;
   #readiness: ReadinessReport | undefined;
 
   constructor(session: LspSession, options: QueryEngineOptions = {}) {
     this.#session = session;
     this.#options = options;
+    this.#cache =
+      options.cacheDirectory === undefined ? undefined : new FileCache({ directory: options.cacheDirectory });
+  }
+
+  /** On-disk cache, when the caller asked for one. */
+  get cache(): FileCache | undefined {
+    return this.#cache;
   }
 
   get session(): LspSession {
@@ -53,10 +69,37 @@ export class QueryContext {
   async tree(filePath: string): Promise<DocumentSkeleton> {
     const absolute = this.#session.resolvePath(filePath);
     const document = await this.#session.refreshDocument(filePath);
+    const text = document.source.text;
     const cached = this.#trees.get(absolute);
-    if (cached !== undefined && cached.text === document.source.text) return cached.tree;
+    if (cached !== undefined && cached.text === text) return cached.tree;
+
+    // A persisted tree skips one hover round-trip per symbol. It is keyed by
+    // the file's own content hash: edits to *this* file invalidate it, edits to
+    // other files that change inferred types do not (see docs/design.md).
+    const relative = this.#session.relativePath(absolute);
+    const contentHash = FileCache.contentHash(text);
+    const cache = this.#cache;
+    if (cache !== undefined) {
+      const key = FileCache.key(relative, contentHash, this.#session.serverName);
+      const persisted = await cache.read<CachedTree>(key, contentHash);
+      if (persisted !== undefined) {
+        const tree: DocumentSkeleton = {
+          path: relative,
+          source: new SourceText(text),
+          symbols: persisted.symbols,
+          globals: persisted.globals,
+        };
+        this.#trees.set(absolute, { text, tree });
+        return tree;
+      }
+    }
+
     const tree = await buildSymbolTree(this.#session, filePath);
-    this.#trees.set(absolute, { text: document.source.text, tree });
+    this.#trees.set(absolute, { text, tree });
+    if (cache !== undefined) {
+      const key = FileCache.key(relative, contentHash, this.#session.serverName);
+      await cache.write<CachedTree>(key, contentHash, { symbols: tree.symbols, globals: tree.globals });
+    }
     return tree;
   }
 

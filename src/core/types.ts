@@ -102,4 +102,12 @@ export interface QueryEngineOptions {
   waitForProjectLoad?: boolean;
   /** Readiness budget per query, in milliseconds. */
   readinessTimeoutMs?: number;
+  /**
+   * Directory for the on-disk skeleton cache.
+   *
+   * The cache lives outside the session (a session can die without losing
+   * it) and is keyed by the file's content hash. Omit it to keep everything
+   * in memory.
+   */
+  cacheDirectory?: string;
 }

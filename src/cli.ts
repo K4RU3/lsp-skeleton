@@ -19,6 +19,7 @@ Options:
   --root <dir>    workspace root (default: cwd)
   --server <name> typescript-language-server | vtsls
   --json          print the raw result object
+  --cache <dir>   persist skeletons in <dir> (shared across runs)
 `;
 
 interface ParsedArgs {
@@ -26,6 +27,7 @@ interface ParsedArgs {
   positional: string[];
   root: string;
   server: string | undefined;
+  cacheDirectory: string | undefined;
   json: boolean;
 }
 
@@ -33,6 +35,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
   let root = process.cwd();
   let server: string | undefined;
+  let cacheDirectory: string | undefined;
   let json = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -40,6 +43,8 @@ function parseArgs(argv: string[]): ParsedArgs {
       root = path.resolve(argv[++index] ?? root);
     } else if (arg === "--server") {
       server = argv[++index];
+    } else if (arg === "--cache") {
+      cacheDirectory = argv[++index];
     } else if (arg === "--json") {
       json = true;
     } else if (arg === "--help" || arg === "-h") {
@@ -49,7 +54,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       positional.push(arg);
     }
   }
-  return { command: positional.shift(), positional, root, server, json };
+  return { command: positional.shift(), positional, root, server, cacheDirectory, json };
 }
 
 async function main(): Promise<void> {
@@ -63,6 +68,7 @@ async function main(): Promise<void> {
   const workspace = await createWorkspace({
     root: args.root,
     ...(args.server === undefined ? {} : { server: args.server as "typescript-language-server" | "vtsls" }),
+    ...(args.cacheDirectory === undefined ? {} : { cacheDirectory: args.cacheDirectory }),
   });
   try {
     const [file, selector] = args.positional;
