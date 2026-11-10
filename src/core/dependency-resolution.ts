@@ -215,10 +215,3 @@ export function renameSignature(signature: string, name: string): string {
   return signature;
 }
 
-function lineAt(text: string, offset: number): number {
-  let line = 1;
-  for (let index = 0; index < offset && index < text.length; index += 1) {
-    if (text.charCodeAt(index) === 10) line += 1;
-  }
-  return line;
-}

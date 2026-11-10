@@ -10,7 +10,7 @@
  * as a standard-library call that deps does not cover.
  */
 import type { LspSession } from "../lsp/session.ts";
-import { QueryContext, QueryError, lineAt, readinessNotes, summaryOf } from "./context.ts";
+import { QueryContext, QueryError, readinessNotes, summaryOf } from "./context.ts";
 import { collectOutgoingCalls, resolveCall } from "./dependency-resolution.ts";
 import { renderSkeleton, type SkeletonOptions } from "./skeleton.ts";
 import { flatten, type DocumentSkeleton, type SymbolNode } from "./symbols.ts";
@@ -291,7 +291,7 @@ function scoreOf(name: string, needle: string): number {
   return 0;
 }
 
-export { QueryError, lineAt };
+export { QueryError };
 export type {
   CalleesResponse,
   DependencyEntry,

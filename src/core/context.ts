@@ -101,14 +101,6 @@ export function summaryOf(tree: DocumentSkeleton, node: SymbolNode): SymbolSumma
   };
 }
 
-export function lineAt(text: string, offset: number): number {
-  let line = 1;
-  for (let index = 0; index < offset && index < text.length; index += 1) {
-    if (text.charCodeAt(index) === 10) line += 1;
-  }
-  return line;
-}
-
 /** Notes that explain a weak or missing answer instead of hiding it. */
 export function readinessNotes(readiness: ReadinessReport, symbolCount: number): QueryNote[] {
   if (readiness.signal === "timeout") {

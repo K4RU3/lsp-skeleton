@@ -10,7 +10,7 @@ import type { LspSession } from "./lsp/session.ts";
 import { QueryEngine } from "./core/query.ts";
 import type { QueryEngineOptions } from "./core/types.ts";
 
-export { QueryEngine, QueryError, lineAt } from "./core/query.ts";
+export { QueryEngine, QueryError } from "./core/query.ts";
 export { startSession, serverSpec, DEFAULT_SERVER, SERVER_NAMES } from "./lsp/server-factory.ts";
 export type { ServerName } from "./lsp/server-factory.ts";
 export { LspSession, LspError } from "./lsp/session.ts";
