@@ -40,7 +40,7 @@ function textOf(result: { content?: unknown }): string {
     .join("\n");
 }
 
-test("MCP exposes exactly the five tools", async () => {
+test("MCP exposes the six query tools", async () => {
   await withClient(async (client) => {
     const { tools } = await client.listTools();
     assert.deepEqual(
