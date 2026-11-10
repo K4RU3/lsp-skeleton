@@ -93,19 +93,13 @@ export async function collectOutgoingCalls(
         });
       }
       // Call hierarchy lists only calls the checker could resolve. Every other
-      // direct call site must still be reported, otherwise an unresolved
-      // dependency would silently disappear from the table.
+      // direct call site must still be reported, and it is worth one
+      // `definition` request: a call into `lib.*.d.ts` is standard library (not
+      // an unresolved dependency), while a truly unknown callee has no
+      // definition at all.
       const covered = new Set(calls.flatMap((call) => call.sites.map((site) => site.start)));
-      for (const site of direct) {
-        if (covered.has(site.calleeStart)) continue;
-        calls.push({
-          callee: site.calleeText,
-          callerPath: node.path,
-          sites: [
-            { start: site.calleeStart, end: site.calleeEnd, line: site.line, text: site.calleeText },
-          ],
-        });
-      }
+      const uncovered = direct.filter((site) => !covered.has(site.calleeStart));
+      if (uncovered.length > 0) calls.push(...(await fallbackCalls(session, node, uncovered)));
       return { calls, nestedSites, usedCallHierarchy: true };
     }
   }
