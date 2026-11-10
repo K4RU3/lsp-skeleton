@@ -5,7 +5,6 @@
  * This is deliberately the *only* place that builds symbol identity. skeleton,
  * deps, expand, usages and search all consume the same nodes.
  */
-import { SymbolKind as LspSymbolKind } from "../lsp/protocol.ts";
 import type { LspSession, SessionSymbol } from "../lsp/session.ts";
 import {
   bodyOf,
@@ -72,12 +71,6 @@ export interface DocumentSkeleton {
   /** Top-level statements that are not part of any symbol (imports, globals). */
   globals: Array<{ range: { start: number; end: number }; lines: number }>;
 }
-
-const FUNCTION_KINDS = new Set<number>([
-  LspSymbolKind.Function,
-  LspSymbolKind.Method,
-  LspSymbolKind.Constructor,
-]);
 
 /** Build the symbol tree for one file. */
 export async function buildSymbolTree(session: LspSession, filePath: string): Promise<DocumentSkeleton> {
@@ -293,5 +286,3 @@ export function isFunctionLike(node: SymbolNode): boolean {
     node.kind === "setter"
   );
 }
-
-export { FUNCTION_KINDS };
