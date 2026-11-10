@@ -472,6 +472,35 @@ export class LspSession {
     return raw ?? undefined;
   }
 
+  /**
+   * Make sure the server has a project to answer workspace-wide queries.
+   *
+   * tsserver only creates a project after a file is opened. Workspace symbol
+   * search (and any other workspace-level request) fails with "No Project"
+   * until then, which would surface as a server error rather than an answer.
+   */
+  async ensureProjectOpen(): Promise<void> {
+    if (this.#documents.values().length > 0) return;
+    const entry = await this.#findProjectEntry();
+    if (entry === undefined) return;
+    await this.openDocument(entry);
+  }
+
+  /** First file included by the workspace's tsconfig/jsconfig, if any. */
+  async #findProjectEntry(): Promise<string | undefined> {
+    for (const name of ["tsconfig.json", "jsconfig.json"]) {
+      const configPath = path.join(this.#workspaceRoot, name);
+      const text = await readTextOrUndefined(configPath);
+      if (text === undefined) continue;
+      const { parseJsonConfigFileContent, readConfigFile, sys } = await import("typescript");
+      const parsed = readConfigFile(configPath, sys.readFile);
+      const contents = parseJsonConfigFileContent(parsed.config, sys, this.#workspaceRoot);
+      const first = contents.fileNames.find((file) => !file.endsWith(".d.ts"));
+      if (first !== undefined) return first;
+    }
+    return undefined;
+  }
+
   /** Byte range of `range` in the document identified by `uri`. */
   async byteRangeOf(uri: string, range: Range): Promise<ByteRange | undefined> {
     const document = await this.#documentForUri(uri);

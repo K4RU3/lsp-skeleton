@@ -8,23 +8,29 @@
     "node": ">=22.18"
   },
   "bin": {
-    "lsp-skeleton": "./dist/cli.js"
+    "lsp-skeleton": "./dist/cli.js",
+    "lsp-skeleton-mcp": "./dist/adapters/mcp/server.js"
   },
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./mcp": "./dist/adapters/mcp/server.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test 'test/*.test.ts'",
-    "probe": "node --experimental-strip-types scripts/probe-servers.ts"
+    "probe": "node --experimental-strip-types scripts/probe-servers.ts",
+    "fixture:setup": "node --experimental-strip-types scripts/setup-fixture.ts",
+    "mcp": "node --experimental-strip-types src/adapters/mcp/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@vtsls/language-server": "^0.3.0",
     "typescript": "^5.9.3",
     "typescript-language-server": "^6.0.3",
-    "@vtsls/language-server": "^0.3.0",
     "vscode-jsonrpc": "^8.2.1",
-    "vscode-languageserver-protocol": "^3.17.5"
+    "vscode-languageserver-protocol": "^3.17.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.0.0"

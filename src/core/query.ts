@@ -227,6 +227,9 @@ export class QueryEngine {
   /** Workspace symbol search, restricted to project files. */
   async search(query: string, limit = 50): Promise<SearchResponse> {
     const session = this.#context.session;
+    // tsserver has no project until a file is open; workspace/symbol would
+    // otherwise fail with "No Project" instead of returning an answer.
+    await session.ensureProjectOpen();
     const readiness = await this.#context.ready();
     const needle = query.toLowerCase();
     const hits: SearchHit[] = [];
