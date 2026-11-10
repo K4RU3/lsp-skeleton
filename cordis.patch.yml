@@ -1,0 +1,10 @@
+# Bundle patch for lsp-skeleton's DeepSeek Harness adapter.
+# `dsh plugin add` reconciles this package into `dsh.profile.bundles`, so this
+# row is applied as one bundle layer; the profile's own cordis.patch.yml can
+# still override the config below.
+- insert:
+    - id: lsp-skeleton
+      name: lsp-skeleton/dsh
+      config:
+        server: typescript-language-server
+        readinessTimeoutMs: 60000
