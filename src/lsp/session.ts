@@ -318,7 +318,7 @@ export class LspSession {
       this.invalidateReadiness();
       return document;
     }
-    if (existing.lines.text === text) return existing;
+    if (existing.source.text === text) return existing;
     const document = this.#documents.set({ uri, languageId: existing.languageId, text });
     this.#notify("textDocument/didChange", {
       textDocument: { uri, version: document.version },
@@ -337,7 +337,7 @@ export class LspSession {
   /** The text of an open document, or of a file on disk. */
   async textForUri(uri: string): Promise<string | undefined> {
     const open = this.#documents.get(uri);
-    if (open !== undefined) return open.lines.text;
+    if (open !== undefined) return open.source.text;
     const filePath = filePathOf(uri);
     if (filePath === null) return undefined;
     return readTextOrUndefined(filePath);
@@ -371,7 +371,7 @@ export class LspSession {
     const document = await this.openDocument(filePath);
     const raw = await this.#request<Hover | null>("textDocument/hover", {
       textDocument: { uri: document.uri },
-      position: document.lines.positionAtByte(byteOffset),
+      position: document.source.positionAt(byteOffset),
     });
     if (raw === null || raw === undefined) return undefined;
     const range = raw.range === undefined ? undefined : this.#byteRange(document, raw.range);
@@ -382,7 +382,7 @@ export class LspSession {
     const document = await this.openDocument(filePath);
     const raw = await this.#request<Location | Location[] | null>("textDocument/definition", {
       textDocument: { uri: document.uri },
-      position: document.lines.positionAtByte(byteOffset),
+      position: document.source.positionAt(byteOffset),
     });
     return this.#locations(raw);
   }
@@ -391,7 +391,7 @@ export class LspSession {
     const document = await this.openDocument(filePath);
     const raw = await this.#request<Location[] | null>("textDocument/references", {
       textDocument: { uri: document.uri },
-      position: document.lines.positionAtByte(byteOffset),
+      position: document.source.positionAt(byteOffset),
       context: { includeDeclaration },
     });
     return this.#locations(raw);
@@ -401,7 +401,7 @@ export class LspSession {
     const document = await this.openDocument(filePath);
     const raw = await this.#request<CallHierarchyItem[] | null>("textDocument/prepareCallHierarchy", {
       textDocument: { uri: document.uri },
-      position: document.lines.positionAtByte(byteOffset),
+      position: document.source.positionAt(byteOffset),
     });
     return this.#callItems(raw);
   }
@@ -466,7 +466,7 @@ export class LspSession {
     const document = await this.openDocument(filePath);
     const raw = await this.#request<SignatureHelp | null>("textDocument/signatureHelp", {
       textDocument: { uri: document.uri },
-      position: document.lines.positionAtByte(byteOffset),
+      position: document.source.positionAt(byteOffset),
       context: { triggerKind: 1, isRetrigger: false },
     });
     return raw ?? undefined;
@@ -825,8 +825,8 @@ export class LspSession {
 
   #byteRange(document: OpenDocument, range: Range): ByteRange {
     return {
-      start: document.lines.byteOffsetAt(range.start),
-      end: document.lines.byteOffsetAt(range.end),
+      start: document.source.byteAt(range.start),
+      end: document.source.byteAt(range.end),
     };
   }
 
@@ -879,7 +879,7 @@ export class LspSession {
     const toWire = (range: ByteRange): Range =>
       document === undefined
         ? { start: { line: range.start, character: 0 }, end: { line: range.end, character: 0 } }
-        : { start: document.lines.positionAtByte(range.start), end: document.lines.positionAtByte(range.end) };
+        : { start: document.source.positionAt(range.start), end: document.source.positionAt(range.end) };
     return {
       name: item.name,
       kind: item.kind,

@@ -56,7 +56,7 @@ export async function collectOutgoingCalls(
 ): Promise<OutgoingCallsReport> {
   const body = node.body;
   if (body === undefined) return { calls: [], nestedSites: 0, usedCallHierarchy: false };
-  const direct = directCallSites(node.path, tree.text, body);
+  const direct = directCallSites(node.path, tree.source, body);
   const directStarts = new Set(direct.map((site) => site.calleeStart));
   let nestedSites = 0;
 
@@ -79,8 +79,8 @@ export async function collectOutgoingCalls(
           sites.push({
             start: range.start,
             end: range.end,
-            line: lineAt(tree.text, range.start),
-            text: tree.text.slice(range.start, range.end),
+            line: tree.source.lineAt(range.start),
+            text: tree.source.slice(range.start, range.end),
           });
         }
         if (sites.length === 0) continue;

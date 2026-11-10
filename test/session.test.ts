@@ -27,14 +27,11 @@ test("session converts byte offsets and LSP positions losslessly", async () => {
   const session = await startSession({ workspaceRoot: fixtureRoot, readinessTimeoutMs: 60_000 });
   try {
     const document = await session.openDocument("src/auth/session.ts");
-    const text = document.lines.text;
-    for (const offset of [0, 10, 100, 375, text.length - 1]) {
-      const position = document.lines.positionAtByte(offset);
-      assert.equal(document.lines.byteOffsetAt(position), offset);
+    const source = document.source;
+    for (const offset of [0, 10, 100, 375, source.byteLength]) {
+      const position = source.positionAt(offset);
+      assert.equal(source.byteAt(position), offset);
     }
-    // Multi-byte characters must not shift byte offsets (LSP counts UTF-16).
-    const withJapanese = await session.openDocument("src/app.ts");
-    void withJapanese;
   } finally {
     session.dispose();
   }

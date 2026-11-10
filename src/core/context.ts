@@ -54,9 +54,9 @@ export class QueryContext {
     const absolute = this.#session.resolvePath(filePath);
     const document = await this.#session.refreshDocument(filePath);
     const cached = this.#trees.get(absolute);
-    if (cached !== undefined && cached.text === document.lines.text) return cached.tree;
+    if (cached !== undefined && cached.text === document.source.text) return cached.tree;
     const tree = await buildSymbolTree(this.#session, filePath);
-    this.#trees.set(absolute, { text: document.lines.text, tree });
+    this.#trees.set(absolute, { text: document.source.text, tree });
     return tree;
   }
 
@@ -85,8 +85,8 @@ export class QueryContext {
 }
 
 export function summaryOf(tree: DocumentSkeleton, node: SymbolNode): SymbolSummary {
-  const line = lineAt(tree.text, node.range.start);
-  const endLine = lineAt(tree.text, node.range.end);
+  const line = tree.source.lineAt(node.range.start);
+  const endLine = tree.source.lineAt(node.range.end);
   return {
     id: node.id,
     name: node.name,

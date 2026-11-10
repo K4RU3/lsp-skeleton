@@ -52,7 +52,7 @@ export class QueryEngine {
     const exports = exportNames(tree.symbols);
     const rendered = renderSkeleton({
       path: tree.path,
-      text: tree.text,
+      text: tree.source.text,
       symbols: tree.symbols,
       globals: tree.globals,
       exports,
@@ -81,7 +81,7 @@ export class QueryEngine {
     const node = this.#context.require(tree, selector);
     return {
       function: summaryOf(tree, node),
-      text: tree.text.slice(node.range.start, node.range.end).replace(/\s+$/, "") + "\n",
+      text: tree.source.slice(node.range.start, node.range.end).replace(/\s+$/, "") + "\n",
       notes: readinessNotes(readiness, 1),
     };
   }
@@ -193,8 +193,8 @@ export class QueryEngine {
           for (const range of call.fromRanges) {
             usages.push({
               path: session.relativePath(callerPath),
-              line: callerDocument === undefined ? 1 : callerDocument.lines.positionAtByte(range.start).line + 1,
-              text: callerDocument === undefined ? "" : callerDocument.lines.text.slice(range.start, range.end),
+              line: callerDocument === undefined ? 1 : callerDocument.source.lineAt(range.start),
+              text: callerDocument === undefined ? "" : callerDocument.source.slice(range.start, range.end),
             });
           }
         }
@@ -209,8 +209,8 @@ export class QueryEngine {
         const document = await session.documentLines(reference.uri);
         usages.push({
           path: session.relativePath(reference.path),
-          line: document === undefined ? 1 : document.lines.positionAtByte(reference.range.start).line + 1,
-          text: document === undefined ? "" : document.lines.text.slice(reference.range.start, reference.range.end),
+          line: document === undefined ? 1 : document.source.lineAt(reference.range.start),
+          text: document === undefined ? "" : document.source.slice(reference.range.start, reference.range.end),
         });
       }
     }
