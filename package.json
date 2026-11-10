@@ -1,0 +1,32 @@
+{
+  "name": "lsp-skeleton",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LSP-backed code skeleton, dependency and expansion queries for TypeScript/JavaScript",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "lsp-skeleton": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "probe": "node --experimental-strip-types scripts/probe-servers.ts"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3",
+    "typescript-language-server": "^6.0.3",
+    "@vtsls/language-server": "^0.3.0",
+    "vscode-jsonrpc": "^8.2.1",
+    "vscode-languageserver-protocol": "^3.17.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0"
+  }
+}
