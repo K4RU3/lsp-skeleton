@@ -1,118 +1,107 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { apply, inject, name } from "../src/adapters/dsh/plugin.ts";
+import { Context } from "@deepseek-ai/cordis";
+import { ToolRuntime } from "@deepseek-ai/dsh-tools";
+import SystemPrompt from "@deepseek-ai/dsh-system-prompt";
+
+import * as plugin from "../src/adapters/dsh/plugin.ts";
 import { fixtureRoot } from "./helpers.ts";
-import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /**
- * The DeepSeek Harness plugin is exercised through its public surface: the
- * tool definitions it registers on `ctx.tools`. A minimal fake context stands
- * in for the harness runtime; the plugin only uses `tools.register`,
- * `effect`, and `workingDirectory.ensure`.
+ * The DeepSeek Harness plugin is exercised against a real Cordis context and
+ * the real `ToolRuntime`: tools are registered through the registry and
+ * invoked with `ctx.tools.execute`, which is the path the agent loop uses.
+ * Only `workingDirectory` is a stand-in (the real one would pull in the whole
+ * session/projection stack).
  */
-interface FakeContext {
-  tools: { register(tool: ToolDefinition): void };
-  effect(callback: () => () => void): void;
-  workingDirectory: { ensure(): Promise<string> };
-  /** Tools registered so far, by name. */
-  registered: Map<string, ToolDefinition>;
-  /** Disposers installed through `ctx.effect`. */
-  disposers: Array<() => void>;
-}
-
-function fakeContext(): FakeContext {
-  const registered = new Map<string, ToolDefinition>();
-  const disposers: Array<() => void> = [];
-  return {
-    tools: {
-      register: (tool) => {
-        registered.set(tool.name, tool);
-      },
-    },
-    effect: (callback) => {
-      disposers.push(callback());
-    },
-    workingDirectory: { ensure: async () => fixtureRoot },
-    registered,
-    disposers,
-  };
-}
-
-/** A call context whose agent resolves to the fixture workspace. */
-const exec = (): Parameters<ToolDefinition["execute"]>[1] => ({
-  callId: "test-call",
-  rootCallId: "test-call",
-  token: "test-token",
-  name: "test",
-  arguments: {},
-  agent: { id: "test-agent" },
-  signal: new AbortController().signal,
-  deferContext: () => undefined,
-  concludeTurn: () => undefined,
-});
-
-function textOf(value: unknown): string {
-  const result = value as { text?: string };
-  return typeof result.text === "string" ? result.text : JSON.stringify(result);
-}
-
-/** Run one tool call and always dispose the plugin's sessions afterwards. */
-async function call(
-  toolName: string,
-  args: Record<string, unknown>,
-  check: (text: string) => void,
-): Promise<void> {
-  const ctx = fakeContext();
-  apply(ctx as never, {});
+async function withHarness(run: (ctx: Context) => Promise<void>): Promise<void> {
+  const ctx = new Context();
+  ctx.plugin(SystemPrompt, {});
+  ctx.plugin(ToolRuntime, {});
+  ctx.provide("workingDirectory", {
+    ensure: async () => fixtureRoot,
+    get: () => fixtureRoot,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Load the plugin through the registry so its disposer is scoped to a fiber
+  // and tears down the language-server sessions when the test ends.
+  const fiber = ctx.plugin(plugin as never, {});
+  await fiber;
   try {
-    const tool = ctx.registered.get(toolName);
-    assert.ok(tool, `${toolName} must be registered`);
-    check(textOf(await tool.execute(args, exec() as never)));
+    await run(ctx);
   } finally {
-    for (const dispose of ctx.disposers) dispose();
+    await fiber.dispose();
   }
 }
 
-test("the plugin registers the five lsp tools and declares its services", () => {
-  const ctx = fakeContext();
-  apply(ctx as never, {});
-  assert.equal(name, "lsp-skeleton");
-  assert.deepEqual([...inject].sort(), ["tools", "workingDirectory"]);
-  assert.deepEqual(
-    [...ctx.registered.keys()].sort(),
-    ["lsp_callees", "lsp_deps", "lsp_expand", "lsp_search", "lsp_skeleton", "lsp_usages"],
-  );
-  for (const tool of ctx.registered.values()) {
-    assert.ok(tool.output, `${tool.name} must declare output`);
-    assert.equal(tool.output.schema.type, "object");
-  }
-  for (const dispose of ctx.disposers) dispose();
+interface HarnessTools {
+  schemas(): Array<{ name: string }>;
+  execute(input: Record<string, unknown>): Promise<{
+    isError?: boolean;
+    content?: Array<{ type: string; text?: string }>;
+  }>;
+}
+
+function toolsOf(ctx: Context): HarnessTools {
+  return (ctx as unknown as { tools: HarnessTools }).tools;
+}
+
+/** Execute one tool through the registry and return its rendered text. */
+async function runTool(ctx: Context, toolName: string, args: Record<string, unknown>): Promise<string> {
+  const result = await toolsOf(ctx).execute({
+    callId: "test-call",
+    name: toolName,
+    arguments: args,
+    agent: { id: "test-agent" },
+    signal: new AbortController().signal,
+  });
+  assert.notEqual(result.isError, true, `${toolName} failed`);
+  return (result.content ?? []).map((block) => block.text ?? "").join("\n");
+}
+
+test("the plugin registers its tools on a real harness context", async () => {
+  await withHarness(async (ctx) => {
+    const names = toolsOf(ctx)
+      .schemas()
+      .map((schema) => schema.name)
+      .filter((toolName) => toolName.startsWith("lsp_"))
+      .sort();
+    assert.deepEqual(names, ["lsp_callees", "lsp_deps", "lsp_expand", "lsp_search", "lsp_skeleton", "lsp_usages"]);
+    assert.equal(plugin.name, "lsp-skeleton");
+    assert.deepEqual([...plugin.inject].sort(), ["tools", "workingDirectory"]);
+  });
 });
 
-test("lsp_skeleton returns the rendered skeleton", async () => {
-  await call("lsp_skeleton", { file: "src/auth/session.ts" }, (text) => {
+test("lsp_skeleton returns the rendered skeleton through the registry", async () => {
+  await withHarness(async (ctx) => {
+    const text = await runTool(ctx, "lsp_skeleton", { file: "src/auth/session.ts" });
     assert.match(text, /export class SessionStore \{/);
+    assert.match(text, /refresh\(token: string\): number/);
     assert.doesNotMatch(text, /const parsed = parseInput/);
   });
 });
 
 test("lsp_deps renders the dependency table with unresolved calls", async () => {
-  await call("lsp_deps", { file: "src/app.ts", symbol: "main" }, (text) => {
+  await withHarness(async (ctx) => {
+    const text = await runTool(ctx, "lsp_deps", { file: "src/app.ts", symbol: "main" });
     assert.match(text, /createFixtureDep/);
     assert.match(text, /unresolved:/);
     assert.match(text, /missingHelper/);
+    assert.match(text, /note \(dynamic-dispatch\)/);
   });
 });
 
 test("lsp_expand renders one function body", async () => {
-  await call("lsp_expand", { file: "src/auth/session.ts", symbol: "SessionStore.refresh" }, (text) => {
+  await withHarness(async (ctx) => {
+    const text = await runTool(ctx, "lsp_expand", { file: "src/auth/session.ts", symbol: "SessionStore.refresh" });
     assert.match(text, /this.lastSize = numeric;/);
   });
 });
 
 test("lsp_usages explains an empty result", async () => {
-  await call("lsp_usages", { file: "src/app.ts", symbol: "neverCalled" }, (text) => {
+  await withHarness(async (ctx) => {
+    const text = await runTool(ctx, "lsp_usages", { file: "src/app.ts", symbol: "neverCalled" });
     assert.match(text, /no static usages/);
     assert.match(text, /does NOT mean the function is never called/);
   });
