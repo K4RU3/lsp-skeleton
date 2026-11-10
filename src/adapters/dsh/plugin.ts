@@ -8,6 +8,7 @@
  */
 import { defineTool, type ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { Context } from "@deepseek-ai/cordis";
+import z from "@deepseek-ai/schemastery";
 // Type-only: brings the ctx.workingDirectory merge into scope.
 import type {} from "@deepseek-ai/dsh-working-directory";
 
@@ -20,6 +21,24 @@ export const name = "lsp-skeleton";
 
 /** Services used by this plugin. */
 export const inject = ["tools", "workingDirectory"];
+
+/**
+ * Plugin config, validated by the harness loader.
+ *
+ * The shape is deliberately small: everything else (file, symbol, query) is a
+ * tool argument, not deployment configuration.
+ */
+export const Config = z.object({
+  server: z
+    .union(["typescript-language-server", "vtsls"])
+    .default("typescript-language-server")
+    .description("Language server to launch for each workspace"),
+  readinessTimeoutMs: z
+    .natural()
+    .max(600_000)
+    .default(60_000)
+    .description("How long to wait for the language server's project load, in milliseconds"),
+});
 
 interface AdapterConfig {
   /** Language server to launch for each workspace. */
@@ -74,7 +93,9 @@ function withNotes(text: string, notes: QueryNote[]): string {
 /** Register the lsp-skeleton tools on the harness context. */
 export function apply(ctx: Context, config: AdapterConfig = {}): void {
   const pool = new WorkspacePool(config);
-  ctx.effect(() => () => void pool.dispose());
+  // Sessions are fiber-scoped: unloading the plugin (or failing startup) stops
+  // every language server it started, so no child process outlives the plugin.
+  ctx.effect(() => () => pool.dispose());
 
   /** Workspace root for one call: the session's own working directory. */
   const rootOf = async (exec: ToolRunContext): Promise<string> => {
