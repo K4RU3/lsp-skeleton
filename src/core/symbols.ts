@@ -13,6 +13,7 @@ import {
   classifyDeclaration,
   signatureHeader,
   topLevelStatements,
+  declarationStart,
   declarationNameOffset,
   heritageText,
   isExported,
@@ -43,6 +44,14 @@ export interface SymbolNode {
   range: { start: number; end: number };
   /** Byte range of the declaration's name (the identifier). */
   selectionRange: { start: number; end: number };
+  /**
+   * Byte offset of the name the server will recognise.
+   *
+   * `documentSymbol` reports the whole declaration as `selectionRange` for
+   * overload implementations, and LSP would then resolve no symbol at that
+   * position; this offset always points at the identifier itself.
+   */
+  nameOffset: number;
   /** Byte range of the body, when the declaration has one. */
   body?: { start: number; end: number; lines: number; expression: boolean };
   children: SymbolNode[];
@@ -99,6 +108,7 @@ async function convertSymbol(
   const isClassOrInterface = kind === "class" || kind === "interface";
 
   const resolved = await resolveSignature(session, path, text, symbol, nameOffset, kind);
+  const range = { start: declarationStart(path, text, symbol.range), end: symbol.range.end };
   const children: SymbolNode[] = [];
   const node: SymbolNode = {
     id: formatFunctionId(path, qualifiedName, resolved.signature, kind),
@@ -108,8 +118,9 @@ async function convertSymbol(
     kind,
     signature: resolved.signature,
     signatureSource: resolved.source,
-    range: symbol.range,
+    range,
     selectionRange: symbol.selectionRange,
+    nameOffset,
     children,
     exported: isExported(path, text, symbol.range),
     lspKind: symbol.kind,
@@ -271,17 +282,27 @@ export function flatten(nodes: SymbolNode[]): SymbolNode[] {
   return result;
 }
 
-/** Find a symbol by id, exact qualified name, or bare name (first match). */
+/**
+ * Find a symbol by id, exact qualified name, or bare name.
+ *
+ * A bare name can match several declarations (overloads: the signatures have
+ * no body, the implementation does). Prefer the one with a body so that
+ * `deps("parse")` scans the implementation instead of an empty signature.
+ */
 export function findSymbol(nodes: SymbolNode[], selector: string): SymbolNode | undefined {
   const all = flatten(nodes);
   const byId = all.find((node) => node.id === selector);
   if (byId !== undefined) return byId;
-  const byQualified = all.find((node) => node.qualifiedName === selector);
+  const byQualified = preferBody(all.filter((node) => node.qualifiedName === selector));
   if (byQualified !== undefined) return byQualified;
-  const byName = all.filter((node) => node.name === selector);
-  if (byName.length > 0) return byName[0];
-  const caseInsensitive = all.find((node) => node.qualifiedName.toLowerCase() === selector.toLowerCase());
-  return caseInsensitive;
+  const byName = preferBody(all.filter((node) => node.name === selector));
+  if (byName !== undefined) return byName;
+  return all.find((node) => node.qualifiedName.toLowerCase() === selector.toLowerCase());
+}
+
+function preferBody(candidates: SymbolNode[]): SymbolNode | undefined {
+  if (candidates.length === 0) return undefined;
+  return candidates.find((node) => node.body !== undefined) ?? candidates[0];
 }
 
 /** True when the symbol is callable (has a body worth expanding/dep-scanning). */

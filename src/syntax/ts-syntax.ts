@@ -168,7 +168,7 @@ export function classifyDeclaration(
   const named = node === undefined ? undefined : closestNamedNode(node);
   if (named === undefined) return fallback === "function" ? "function" : "unknown";
   if (ts.isFunctionDeclaration(named)) return "function";
-  if (ts.isMethodDeclaration(named)) return "method";
+  if (ts.isMethodDeclaration(named) || ts.isMethodSignature(named)) return "method";
   if (ts.isConstructorDeclaration(named)) return "constructor";
   if (ts.isGetAccessorDeclaration(named)) return "getter";
   if (ts.isSetAccessorDeclaration(named)) return "setter";
@@ -270,6 +270,28 @@ export function signatureHeader(
   const start = functionLike.getStart(source);
   const end = functionLike.body === undefined ? functionLike.getEnd() : functionLike.body.getStart(source);
   return text.slice(start, end).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Start of a declaration including its modifiers (`export`, `declare`, ...).
+ *
+ * `documentSymbol` reports a variable declaration's range starting at its
+ * name, so slicing that range loses `export const`. Widening to the first
+ * token of the declaration keeps `expand` faithful to the source.
+ */
+export function declarationStart(filePath: string, text: string, range: { start: number; end: number }): number {
+  const source = parseTypeScript(filePath, text);
+  const node = nodeAtOffset(source, range.start);
+  const named = node === undefined ? undefined : closestNamedNode(node);
+  if (named === undefined) return range.start;
+  // Walk out to the enclosing top-level *statement*: `export const f = ...`
+  // is one statement, and modifiers belong to it, not to the declaration.
+  let outermost: ts.Node = named;
+  while (outermost.parent !== undefined && !ts.isSourceFile(outermost.parent)) {
+    outermost = outermost.parent;
+  }
+  if (!ts.isSourceFile(outermost.parent)) return range.start;
+  return outermost.getStart(source);
 }
 
 /** One top-level statement of a source file. */

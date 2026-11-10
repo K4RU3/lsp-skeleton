@@ -183,7 +183,7 @@ export class QueryEngine {
     const usages: UsagesResponse["usages"] = [];
     const notes: QueryNote[] = [...readinessNotes(readiness, 1)];
     if (session.hasCallHierarchy) {
-      const items = await session.prepareCallHierarchy(node.path, node.selectionRange.start);
+      const items = await session.prepareCallHierarchy(node.path, node.nameOffset);
       const item = items[0];
       if (item !== undefined) {
         for (const call of await session.incomingCalls(item)) {
@@ -204,7 +204,7 @@ export class QueryEngine {
         kind: "fallback",
         message: "The server does not advertise callHierarchy; usages came from textDocument/references.",
       });
-      for (const reference of await session.references(node.path, node.selectionRange.start, false)) {
+      for (const reference of await session.references(node.path, node.nameOffset, false)) {
         if (reference.path === null) continue;
         const document = await session.documentLines(reference.uri);
         usages.push({

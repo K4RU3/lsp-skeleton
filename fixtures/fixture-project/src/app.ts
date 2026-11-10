@@ -23,6 +23,11 @@ export function registerHandler(handler: () => void): void {
   handlers.push(handler);
 }
 
+/** Never referenced anywhere: usages of this must be 0. */
+export function neverCalled(): void {
+  wrap(1);
+}
+
 const handlers: Array<() => void> = [];
 
 function requireNotifier(): never {

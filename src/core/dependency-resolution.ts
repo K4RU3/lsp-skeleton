@@ -61,7 +61,7 @@ export async function collectOutgoingCalls(
   let nestedSites = 0;
 
   if (session.hasCallHierarchy) {
-    const items = await session.prepareCallHierarchy(node.path, node.selectionRange.start);
+    const items = await session.prepareCallHierarchy(node.path, node.nameOffset);
     const item = items[0];
     if (item !== undefined) {
       const outgoing = await session.outgoingCalls(item);
@@ -128,7 +128,9 @@ async function fallbackCalls(
       line: site.line,
       text: site.calleeText,
     };
-    const definitions = await session.definitions(node.path, site.calleeStart);
+    // Resolve the *property name*, not the receiver: `a.b()` must resolve to
+    // `b`, and a position at the receiver resolves to the variable instead.
+    const definitions = await session.definitions(node.path, Math.max(site.calleeStart, site.calleeEnd - 1));
     const definition = definitions[0];
     if (definition?.path === undefined || definition.path === null) {
       calls.push({ callee: site.calleeText, callerPath: node.path, sites: [info] });
@@ -159,7 +161,7 @@ export async function resolveCall(session: LspSession, call: RawCall): Promise<C
   // name, kind) that the dependency id hashes, independently of which
   // overload each call site selected.
   const declared = await symbolAtOffset(session, target.path, target.offset);
-  const hover = await session.hover(target.path, declared?.selectionRange.start ?? target.offset);
+  const hover = await session.hover(target.path, declared?.nameOffset ?? target.offset);
   const parsed = hover === undefined ? undefined : parseHover(hover.markdown);
   if (parsed === undefined || parsed.signature === "") return unresolved("no-hover");
   const name = declared?.name ?? call.callee.split(".").pop() ?? call.callee;
@@ -178,6 +180,10 @@ export async function resolveCall(session: LspSession, call: RawCall): Promise<C
       const active = help?.signatures[help.activeSignature ?? 0]?.label;
       if (active !== undefined && active !== "") signature = active;
     }
+    // Signature help labels a call with the *local alias* (`parseInput`), while
+    // the declaration is named `parse`. Report the declared name so ids and
+    // signatures agree with skeleton/expand.
+    signature = renameSignature(signature, name);
     const entry: DependencyEntry = {
       id: formatFunctionId(target.path, qualifiedName, signature, kind),
       name,
@@ -196,6 +202,17 @@ export async function resolveCall(session: LspSession, call: RawCall): Promise<C
   const entries = [...bySignature.values()];
   if (entries.length === 0) return unresolved("no-hover");
   return { kind: "resolved", entries };
+}
+
+/** Replace the declared name in a signature with `name`, keeping its shape. */
+export function renameSignature(signature: string, name: string): string {
+  const call = /^([A-Za-z_$][\w$]*)\s*\(/.exec(signature);
+  if (call?.[1] !== undefined) return `${name}${signature.slice(call[1].length)}`;
+  const variable = /^(const|let|var)\s+([A-Za-z_$][\w$]*)\s*:/.exec(signature);
+  if (variable?.[1] !== undefined && variable[2] !== undefined) {
+    return `${variable[1]} ${name}${signature.slice(variable[0].length - 1)}`;
+  }
+  return signature;
 }
 
 function lineAt(text: string, offset: number): number {
