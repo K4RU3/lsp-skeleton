@@ -7,7 +7,7 @@
  * never see line/character positions or JSON-RPC.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -223,6 +223,11 @@ export class LspSession {
 
   /** Spawn a server and complete the initialize/initialized handshake. */
   static async start(options: SessionOptions): Promise<LspSession> {
+    const workspaceRoot = path.resolve(options.workspaceRoot);
+    const stats = await stat(workspaceRoot).catch(() => undefined);
+    if (stats === undefined || !stats.isDirectory()) {
+      throw new LspError(`workspace root does not exist or is not a directory: ${workspaceRoot}`, "spawn");
+    }
     const child = spawn(options.server.command, options.server.args, {
       cwd: options.workspaceRoot,
       stdio: ["pipe", "pipe", "pipe"],
