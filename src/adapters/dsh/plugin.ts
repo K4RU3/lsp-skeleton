@@ -74,7 +74,7 @@ function withNotes(text: string, notes: QueryNote[]): string {
 /** Register the lsp-skeleton tools on the harness context. */
 export function apply(ctx: Context, config: AdapterConfig = {}): void {
   const pool = new WorkspacePool(config);
-  ctx.effect?.(() => () => void pool.dispose());
+  ctx.effect(() => () => void pool.dispose());
 
   /** Workspace root for one call: the session's own working directory. */
   const rootOf = async (exec: ToolRunContext): Promise<string> => {

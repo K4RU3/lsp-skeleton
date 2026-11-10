@@ -708,6 +708,11 @@ export class LspSession {
   async #awaitProjectLoad(timeoutMs: number): Promise<ReadinessReport> {
     const started = Date.now();
     if (this.#disposed) return { ready: false, signal: "disposed", waitedMs: 0 };
+    if (this.#documents.values().length === 0) {
+      // No document has been opened, so no project can be loading. Waiting
+      // here would burn the whole readiness budget for nothing.
+      return { ready: true, signal: "quiet", waitedMs: 0 };
+    }
     // Give the server a moment to announce loading; the progress begin may
     // arrive only after the first didOpen has been processed.
     await this.#waitForProgress(() => this.#progress.begins > 0, Math.min(3000, timeoutMs));

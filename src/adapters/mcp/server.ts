@@ -242,7 +242,7 @@ async function main(): Promise<void> {
       if (value === "typescript-language-server" || value === "vtsls") server = value;
     }
   }
-  const { server: mcpServer, pool, connectStdio } = createMcpServer({
+  const { pool, connectStdio } = createMcpServer({
     ...(root === undefined ? {} : { root }),
     ...(server === undefined ? {} : { server }),
   });

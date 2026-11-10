@@ -34,10 +34,19 @@ export class QueryContext {
     return this.#session;
   }
 
-  /** Wait (once) for the server to finish loading the project. */
+  /**
+   * Wait (once) for the server to finish loading the project.
+   *
+   * A project exists only once a file is open, so this first makes sure the
+   * workspace has one; otherwise `workspace/symbol` and friends would answer
+   * from an empty program ("No Project").
+   */
   async ready(): Promise<ReadinessReport> {
     if (this.#options.waitForProjectLoad === false) return { ready: true, signal: "quiet", waitedMs: 0 };
-    this.#readiness ??= await this.#session.waitForProjectLoad(this.#options.readinessTimeoutMs);
+    if (this.#readiness === undefined) {
+      await this.#session.ensureProjectOpen();
+      this.#readiness = await this.#session.waitForProjectLoad(this.#options.readinessTimeoutMs);
+    }
     return this.#readiness;
   }
 
