@@ -1,9 +1,3 @@
-/**
- * Test helpers: one shared language-server session per fixture project.
- *
- * Starting a server costs ~100ms + project load, so the suite shares one
- * session across tests and disposes it at the end.
- */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -17,8 +11,10 @@ const run = promisify(execFile);
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const fixtureRoot = path.join(repoRoot, "fixtures/fixture-project");
+export const rustFixtureRoot = path.join(repoRoot, "fixtures/rust-project");
 
 let shared: Promise<Workspace> | undefined;
+let sharedRust: Promise<Workspace | undefined> | undefined;
 
 /**
  * The fixture's `.d.ts` dependency is generated (not committed), so a fresh
@@ -41,10 +37,39 @@ export async function fixtureWorkspace(server?: ServerName): Promise<Workspace> 
   return shared;
 }
 
-/** Dispose the shared workspace (call once from the test file's after hook). */
+/**
+ * The shared workspace for the Rust fixture crate.
+ *
+ * rust-analyzer is not a dependency of this package: it is whatever the user
+ * has installed (see resolveRustAnalyzer). When it cannot be started at all,
+ * the Rust tests skip instead of failing, so the suite still runs on a
+ * machine without a Rust toolchain.
+ */
+export async function rustWorkspace(): Promise<Workspace | undefined> {
+  sharedRust ??= createWorkspace({
+    root: rustFixtureRoot,
+    server: "rust-analyzer",
+    readinessTimeoutMs: 180_000,
+  }).then(
+    (workspace) => workspace,
+    (error: unknown) => {
+      process.stderr.write(`[rust tests skipped] ${String(error)}\n`);
+      return undefined;
+    },
+  );
+  return sharedRust;
+}
+
+/** Dispose the shared workspaces (call once from the test file's after hook). */
 export async function disposeFixtureWorkspace(): Promise<void> {
-  if (shared === undefined) return;
-  const workspace = await shared;
-  workspace.dispose();
-  shared = undefined;
+  if (shared !== undefined) {
+    const workspace = await shared;
+    workspace.dispose();
+    shared = undefined;
+  }
+  if (sharedRust !== undefined) {
+    const workspace = await sharedRust;
+    workspace?.dispose();
+    sharedRust = undefined;
+  }
 }

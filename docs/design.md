@@ -12,8 +12,12 @@
 セッション層  src/lsp/*         initialize / 能力交渉 / 文書同期 / 位置変換 / プロセス管理
     │  stdio (将来: socket / 常駐)
     ▼
-言語サーバ (typescript-language-server / vtsls)
+言語サーバ (typescript-language-server / vtsls / rust-analyzer)
 ```
+
+言語差は `src/languages/*` の**言語プロファイル**だけに閉じる。セッション層・トランスポート・
+結果キャッシュ・アダプタ層は言語を知らない。問い合わせ層は `LanguageProfile` を受け取り、
+「いま何語を見ているか」を尋ねない（`if (language === 'rust')` は存在しない）。
 
 - **1 セッション = 1 ワークスペース**。セッションは使い捨てでき、永続データを持たない。
 - 結果キャッシュはセッションの外（`src/cache/file-cache.ts`）に置く。セッションが死んでも
@@ -35,6 +39,15 @@ skeleton / deps / expand / usages はすべて「どの宣言か」を同じよ�
 
 hover は表示用テキストなので、その解釈（`function` や `(+1 overload)` の除去）は
 問い合わせ層の内側 (`src/core/hover-text.ts`) で閉じる。
+
+TypeScript 以外では、この 4 段のうち言語ごとに違う部分がプロファイルに移る:
+
+| 段 | TypeScript | Rust |
+|---|---|---|
+| 1. 宣言と範囲 | documentSymbol（ローカル束縛まで入れ子で返る） | documentSymbol（`use` も `let` も返らない） |
+| 2. 署名 | hover（推論型は hover にしか無い） | **documentSymbol.detail**（`fn(&self, text: &str) -> Option<Word>`） |
+| 3. 本文 | TypeScript パーサ | `rust-scanner.ts`（コメント・文字列・raw 文字列・ライフタイムを捨てる字句走査） |
+| 4. id | 同じ | 同じ |
 
 ### 署名の source of truth
 

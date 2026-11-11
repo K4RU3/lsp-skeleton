@@ -5,7 +5,7 @@
  */
 import path from "node:path";
 
-import { createWorkspace } from "./index.ts";
+import { createWorkspace, type ServerName } from "./index.ts";
 
 const USAGE = `Usage:
   lsp-skeleton skeleton <file>
@@ -17,7 +17,7 @@ const USAGE = `Usage:
 
 Options:
   --root <dir>    workspace root (default: cwd)
-  --server <name> typescript-language-server | vtsls
+  --server <name> typescript-language-server | vtsls | rust-analyzer
   --json          print the raw result object
   --cache <dir>   persist skeletons in <dir> (shared across runs)
 `;
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   }
   const workspace = await createWorkspace({
     root: args.root,
-    ...(args.server === undefined ? {} : { server: args.server as "typescript-language-server" | "vtsls" }),
+    ...(args.server === undefined ? {} : { server: args.server as ServerName }),
     ...(args.cacheDirectory === undefined ? {} : { cacheDirectory: args.cacheDirectory }),
   });
   try {

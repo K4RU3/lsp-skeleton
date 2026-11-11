@@ -10,9 +10,8 @@
  * dependency that is not actually invoked by the function's own flow.
  */
 import type { LspSession } from "../lsp/session.ts";
-import { directCallSites, type CallSiteCandidate } from "../syntax/ts-syntax.ts";
-import { isExternalPath, isStdlibPath } from "./context.ts";
-import { parseHover } from "./hover-text.ts";
+import type { LanguageProfile } from "../languages/profile.ts";
+import type { CallSiteCandidate } from "../languages/types.ts";
 import { formatFunctionId } from "./ids.ts";
 import { symbolAtOffset, type DocumentSkeleton, type SymbolNode } from "./symbols.ts";
 import type { DependencyEntry, UnresolvedCall } from "./types.ts";
@@ -56,7 +55,7 @@ export async function collectOutgoingCalls(
 ): Promise<OutgoingCallsReport> {
   const body = node.body;
   if (body === undefined) return { calls: [], nestedSites: 0, usedCallHierarchy: false };
-  const direct = directCallSites(node.path, tree.source, body);
+  const direct = tree.profile.resolution?.directCallSites(node.path, tree.source, body) ?? [];
   const directStarts = new Set(direct.map((site) => site.calleeStart));
   let nestedSites = 0;
 
@@ -141,7 +140,7 @@ async function fallbackCalls(
 }
 
 /** Resolve one raw call into dependency entries (one per selected overload). */
-export async function resolveCall(session: LspSession, call: RawCall): Promise<CallResolution> {
+export async function resolveCall(session: LspSession, call: RawCall, profile: LanguageProfile): Promise<CallResolution> {
   const firstSite = call.sites[0];
   const unresolved = (reason: UnresolvedCall["reason"]): CallResolution => ({
     kind: "unresolved",
@@ -149,24 +148,38 @@ export async function resolveCall(session: LspSession, call: RawCall): Promise<C
   });
   const target = call.target;
   if (target === undefined) return unresolved("no-definition");
-  if (isStdlibPath(target.path)) return { kind: "stdlib" };
+  if (profile.isStdlibPath(target.path)) return { kind: "stdlib" };
 
   // Resolve the declaration itself: it supplies the identity (name, qualified
   // name, kind) that the dependency id hashes, independently of which
   // overload each call site selected.
-  const declared = await symbolAtOffset(session, target.path, target.offset);
-  const hover = await session.hover(target.path, declared?.nameOffset ?? target.offset);
-  const parsed = hover === undefined ? undefined : parseHover(hover.markdown);
-  if (parsed === undefined || parsed.signature === "") return unresolved("no-hover");
-  const name = declared?.name ?? call.callee.split(".").pop() ?? call.callee;
-  const qualifiedName = declared?.qualifiedName ?? name;
-  const kind = declared?.kind ?? "unknown";
-  const external = isExternalPath(target.path);
-  const overloaded = parsed.overloads > 0;
+  const resolved = await symbolAtOffset(session, target.path, target.offset, profile);
+  if (resolved === undefined) return unresolved("no-definition");
+  const declared = resolved.node;
+  const hover = profile.wantsHover ? await session.hover(target.path, declared.nameOffset) : undefined;
+  const described = profile.describe(
+    {
+      filePath: declared.path,
+      source: resolved.source,
+      symbol: resolved.raw,
+      kind: declared.kind,
+      nameOffset: declared.nameOffset,
+      range: declared.range,
+    },
+    hover?.markdown,
+  );
+  if (described.signature.signature === "") return unresolved("no-hover");
+  const name = declared.name;
+  const qualifiedName = declared.qualifiedName;
+  const kind = declared.kind;
+  const external = profile.isExternalPath(target.path);
+  // Only a language with overloading needs per-call-site selection, and only it
+  // reports a non-zero overload count.
+  const overloaded = described.overloads > 0;
 
   const bySignature = new Map<string, DependencyEntry>();
   for (const site of call.sites) {
-    let signature = parsed.signature;
+    let signature = described.signature.signature;
     if (overloaded && session.hasSignatureHelp) {
       // Signature help is asked from inside the argument list: that is where
       // the checker decides which overload the call selects.
@@ -187,7 +200,7 @@ export async function resolveCall(session: LspSession, call: RawCall): Promise<C
       kind,
       external,
       callSites: [{ line: site.line, text: site.text }],
-      ...(parsed.doc === undefined ? {} : { doc: parsed.doc }),
+      ...(described.doc === undefined ? {} : { doc: described.doc }),
     };
     const existing = bySignature.get(entry.id);
     if (existing === undefined) bySignature.set(entry.id, entry);
@@ -208,4 +221,3 @@ export function renameSignature(signature: string, name: string): string {
   }
   return signature;
 }
-

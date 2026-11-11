@@ -6,6 +6,7 @@
  * symbol identities.
  */
 import { FileCache } from "../cache/file-cache.ts";
+import { profileForServer } from "../languages/profile.ts";
 import type { LspSession, ReadinessReport } from "../lsp/session.ts";
 import { SourceText } from "./source-text.ts";
 import { buildSymbolTree, findSymbol, flatten, isFunctionLike, type DocumentSkeleton, type SymbolNode } from "./symbols.ts";
@@ -50,6 +51,11 @@ export class QueryContext {
     return this.#session;
   }
 
+  /** The language profile of the session's server. */
+  get profile(): import("../languages/profile.ts").LanguageProfile {
+    return this.#options.profile ?? profileForServer(this.#session.serverName);
+  }
+
   /**
    * Wait (once) for the server to finish loading the project.
    *
@@ -88,13 +94,14 @@ export class QueryContext {
           source: new SourceText(text),
           symbols: persisted.symbols,
           globals: persisted.globals,
+          profile: this.profile,
         };
         this.#trees.set(absolute, { text, tree });
         return tree;
       }
     }
 
-    const tree = await buildSymbolTree(this.#session, filePath);
+    const tree = await buildSymbolTree(this.#session, filePath, this.profile);
     this.#trees.set(absolute, { text, tree });
     if (cache !== undefined) {
       const key = FileCache.key(relative, contentHash, this.#session.serverName);
@@ -145,7 +152,11 @@ export function summaryOf(tree: DocumentSkeleton, node: SymbolNode): SymbolSumma
 }
 
 /** Notes that explain a weak or missing answer instead of hiding it. */
-export function readinessNotes(readiness: ReadinessReport, symbolCount: number): QueryNote[] {
+export function readinessNotes(
+  readiness: ReadinessReport,
+  symbolCount: number,
+  profile: import("../languages/profile.ts").LanguageProfile,
+): QueryNote[] {
   if (readiness.signal === "timeout") {
     return [
       {
@@ -161,18 +172,19 @@ export function readinessNotes(readiness: ReadinessReport, symbolCount: number):
     return [
       {
         kind: "readiness",
-        message:
-          "The server returned no symbols for this file. That can mean an empty file, a file outside the tsconfig project, or a server that has not finished loading.",
+        message: `The server returned no symbols for this file. ${profile.emptyFileExplanation}`,
       },
     ];
   }
   return [];
 }
 
+/** @deprecated Language profiles own this rule now; kept for old callers. */
 export function isStdlibPath(path: string): boolean {
   return /(?:^|\/)lib\.[^/]*\.d\.ts$/.test(path);
 }
 
+/** @deprecated Language profiles own this rule now; kept for old callers. */
 export function isExternalPath(path: string): boolean {
   return path.includes("node_modules/") || (path.endsWith(".d.ts") && !isStdlibPath(path));
 }

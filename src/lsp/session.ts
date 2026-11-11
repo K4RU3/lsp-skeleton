@@ -11,6 +11,8 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { profileForPath, profileForServer } from "../languages/profile.ts";
+import type { LanguageProfile } from "../languages/profile.ts";
 import { DocumentStore, filePathOf, readTextOrUndefined, uriOfFile, type OpenDocument } from "./documents.ts";
 import {
   SymbolKind,
@@ -107,6 +109,11 @@ export interface SessionEvents {
 export interface SessionOptions {
   server: ServerLaunchSpec;
   workspaceRoot: string;
+  /**
+   * Language profile of the server. Optional: without it the session derives it
+   * from the server name (see LspSession.profile).
+   */
+  language?: LanguageProfile;
   /** Milliseconds to wait for `initialize` before failing. */
   initializeTimeoutMs?: number;
   /** Milliseconds to wait for project loading after the first open. */
@@ -135,20 +142,7 @@ const DEFAULTS = {
 
 /** Maps a filesystem path to the languageId the servers expect. */
 export function languageIdForPath(filePath: string): string {
-  switch (path.extname(filePath).toLowerCase()) {
-    case ".tsx":
-      return "typescriptreact";
-    case ".jsx":
-      return "javascriptreact";
-    case ".js":
-    case ".mjs":
-    case ".cjs":
-      return "javascript";
-    case ".json":
-      return "json";
-    default:
-      return "typescript";
-  }
+  return profileForPath(filePath)?.languageId(filePath) ?? "typescript";
 }
 
 interface PendingRequest {
@@ -190,6 +184,7 @@ export class LspSession {
     begins: 0,
   };
   #nextId = 1;
+  #language: LanguageProfile | undefined;
   #capabilities: ServerCapabilities = {};
   #serverInfo: { name: string; version?: string } | undefined;
   #disposed = false;
@@ -203,6 +198,7 @@ export class LspSession {
     this.#requestTimeoutMs = options.requestTimeoutMs ?? DEFAULTS.requestTimeoutMs;
     this.#workspaceRoot = path.resolve(options.workspaceRoot);
     this.#child = child;
+    this.#language = options.language as LanguageProfile | undefined;
     this.#transport = new StreamTransport(child.stdout, child.stdin);
     this.#transport.onMessage((message) => this.#handleMessage(message));
     child.stderr.setEncoding("utf8");
@@ -246,6 +242,11 @@ export class LspSession {
       session.dispose();
       throw error;
     }
+  }
+
+  /** Language profile in force for this session's server. */
+  get profile(): LanguageProfile {
+    return this.#language ?? profileForServer(this.serverName);
   }
 
   get serverName(): string {
@@ -501,8 +502,16 @@ export class LspSession {
     await this.openDocument(entry);
   }
 
-  /** First file included by the workspace's tsconfig/jsconfig, if any. */
+  /**
+   * First file that gives the server a project to answer for.
+   *
+   * The language profile decides first (a Cargo package needs a Rust file
+   * open); when it declines, the TypeScript configuration files are consulted,
+   * which is where this discovery started.
+   */
   async #findProjectEntry(): Promise<string | undefined> {
+    const typed = await this.#projectEntryFromProfile();
+    if (typed !== undefined) return typed;
     for (const name of ["tsconfig.json", "jsconfig.json"]) {
       const configPath = path.join(this.#workspaceRoot, name);
       const text = await readTextOrUndefined(configPath);
@@ -514,6 +523,18 @@ export class LspSession {
       if (first !== undefined) return first;
     }
     return undefined;
+  }
+
+  /**
+   * Entry file proposed by the server's language profile.
+   *
+   * Undefined when the profile has no opinion, or when the server is not one of
+   * the profiles (an unknown server keeps the TypeScript discovery).
+   */
+  async #projectEntryFromProfile(): Promise<string | undefined> {
+    const profile = this.#language ?? profileForServer(this.serverName);
+    const entry = await Promise.resolve(profile.projectEntry(this.#workspaceRoot)).catch(() => undefined);
+    return entry === undefined ? undefined : path.resolve(entry);
   }
 
   /** Byte range of `range` in the document identified by `uri`. */
@@ -739,11 +760,26 @@ export class LspSession {
       return { ready: !this.#disposed, signal: "quiet", waitedMs: Date.now() - started };
     }
     const settled = await this.#waitForQuiescence(timeoutMs - (Date.now() - started), 150);
+    if (!settled) {
+      return { ready: false, signal: "timeout", waitedMs: Date.now() - started };
+    }
+    // Progress going quiet is not the same as the workspace being answerable;
+    // the language profile knows what its server does before it can answer.
+    const answered = await this.#awaitProfileReady(timeoutMs - (Date.now() - started));
     return {
-      ready: settled && !this.#disposed,
-      signal: settled ? "progress" : "timeout",
+      ready: answered && !this.#disposed,
+      signal: answered ? "progress" : "timeout",
       waitedMs: Date.now() - started,
     };
+  }
+
+  /** Let the language profile wait for its own workspace signal, if any. */
+  async #awaitProfileReady(remainingMs: number): Promise<boolean> {
+    const profile = this.profile;
+    if (profile.awaitWorkspaceReady === undefined || remainingMs <= 0) return true;
+    const entry = await this.#findProjectEntry();
+    if (entry === undefined) return true;
+    return profile.awaitWorkspaceReady(this, entry, remainingMs).catch(() => true);
   }
 
   /** Wait until no progress is active and no new one began for `quietMs`. */

@@ -2,20 +2,25 @@
  * Renders the skeleton: structure and types only, bodies folded.
  *
  * Everything here operates on the shared {@link SymbolNode} tree built from
- * documentSymbol + hover, so skeleton, deps and expand agree on identity.
+ * documentSymbol plus the language profile, so skeleton, deps and expand agree
+ * on identity. The renderer knows three shapes ({@link RenderLayout}) and never
+ * checks which language produced a node: the profile chooses the shape, the
+ * export prefix and the layout of a global region.
  */
 import type { SymbolNode } from "./symbols.ts";
+import type { LanguageProfile } from "../languages/profile.ts";
+import type { SourceText } from "./source-text.ts";
 
 export interface SkeletonOptions {
-  /** Include the leading `// path` line. */
+  /** Include the leading '// path' line. */
   header?: boolean;
-  /** Include JSDoc summaries above declarations. */
+  /** Include doc summaries above declarations. */
   docs?: boolean;
   /** Include top-level statements that are not declarations (imports, ...). */
   globals?: boolean;
-  /** Include the trailing `// exports:` summary. */
+  /** Include the trailing '// exports:' summary. */
   exports?: boolean;
-  /** Include member declarations of classes/interfaces. */
+  /** Include member declarations of classes/interfaces/structs. */
   members?: boolean;
 }
 
@@ -29,10 +34,13 @@ const DEFAULTS: Required<SkeletonOptions> = {
 
 export interface SkeletonInput {
   path: string;
-  text: string;
+  /** The file's text, with the byte <-> UTF-16 conversion the slices need. */
+  source: SourceText;
   symbols: SymbolNode[];
   globals: Array<{ range: { start: number; end: number }; lines: number }>;
   exports: string[];
+  /** The profile that produced the tree; drives layout and global rendering. */
+  profile: LanguageProfile;
   options?: SkeletonOptions;
 }
 
@@ -56,13 +64,18 @@ export function renderSkeleton(input: SkeletonInput): SkeletonResult {
   }
   if (options.globals) {
     for (const span of input.globals) {
-      const code = input.text.slice(span.range.start, span.range.end);
-      for (const line of code.split("\n")) lines.push(line.replace(/\s+$/, ""));
+      // Byte offsets, so slice through SourceText: JS string indices are UTF-16
+      // and slicing a file containing multi-byte text with byte offsets silently
+      // drops the leading characters (the Rust before-fixture's " d / r = ").
+      const code = input.source.slice(span.range.start, span.range.end);
+      const rendered = input.profile.renderGlobal?.(input.path, code);
+      const spanLines = rendered ?? code.split("\n").map((line) => line.replace(/\s+$/, ""));
+      lines.push(...spanLines);
     }
     if (input.globals.length > 0 && input.symbols.length > 0) lines.push("");
   }
   for (const symbol of input.symbols) {
-    const rendered = renderDeclaration(input.text, symbol, 0, options);
+    const rendered = renderDeclaration(input.source, input.profile, symbol, 0, options);
     symbolCount += rendered.count;
     lines.push(...rendered.lines);
   }
@@ -75,7 +88,8 @@ export function renderSkeleton(input: SkeletonInput): SkeletonResult {
 }
 
 function renderDeclaration(
-  source: string,
+  source: SourceText,
+  profile: LanguageProfile,
   node: SymbolNode,
   depth: number,
   options: Required<SkeletonOptions>,
@@ -85,15 +99,21 @@ function renderDeclaration(
   let count = 0;
   if (options.docs && node.doc !== undefined && isCallable(node)) lines.push(`${indent}${docLine(node.doc)}`);
 
-  switch (node.kind) {
-    case "class": {
-      const keyword = node.exported && depth === 0 ? "export class" : "class";
+  switch (profile.layout(node.kind, node)) {
+    case "whole": {
+      // Type definitions are the payload of a skeleton: keep them whole.
+      const text = declarationText(source, node);
+      for (const line of text.split("\n")) lines.push(line.trim() === "" ? "" : `${indent}${line}`);
+      return { lines, count: count + 1 };
+    }
+    case "block": {
+      const prefix = node.exported && depth === 0 ? profile.exportPrefix : "";
       const heritage = node.heritage === undefined ? "" : ` ${node.heritage}`;
-      lines.push(`${indent}${keyword} ${node.name}${heritage} {`);
+      lines.push(`${indent}${prefix}${stripExport(node.signature)}${heritage} {`);
       count += 1;
       if (options.members) {
         for (const child of node.children) {
-          const rendered = renderDeclaration(source, child, depth + 1, options);
+          const rendered = renderDeclaration(source, profile, child, depth + 1, options);
           count += rendered.count;
           lines.push(...rendered.lines);
         }
@@ -101,34 +121,10 @@ function renderDeclaration(
       lines.push(`${indent}}`);
       return { lines, count };
     }
-    case "interface":
-    case "enum":
-    case "type-alias": {
-      // Type definitions are the payload of a skeleton: keep them whole.
-      const text = declarationText(source, node);
-      for (const line of text.split("\n")) lines.push(line.trim() === "" ? "" : `${indent}${line}`);
-      count += 1;
-      return { lines, count };
-    }
-    case "function": {
-      const prefix = node.exported && depth === 0 ? "export " : "";
-      lines.push(`${indent}${prefix}${stripExport(node.signature)}${foldComment(node)}`);
-      count += 1;
-      return { lines, count };
-    }
-    case "method":
-    case "getter":
-    case "setter":
-    case "constructor": {
-      lines.push(`${indent}${stripReceiverFromSignature(node)}${foldComment(node)}`);
-      count += 1;
-      return { lines, count };
-    }
-    default: {
-      const prefix = node.exported && depth === 0 ? "export " : "";
-      lines.push(`${indent}${prefix}${memberSignature(node)}${foldComment(node)}`);
-      count += 1;
-      return { lines, count };
+    case "line": {
+      const prefix = node.exported && depth === 0 ? profile.exportPrefix : "";
+      lines.push(`${indent}${prefix}${displaySignature(node)}${foldComment(node)}`);
+      return { lines, count: count + 1 };
     }
   }
 }
@@ -159,30 +155,24 @@ function stripExport(signature: string): string {
   return normalize(signature).replace(/^export\s+/, "");
 }
 
-/** `SessionStore.refresh(token: string)` -> `refresh(token: string)` */
-function stripReceiverFromSignature(node: SymbolNode): string {
-  const signature = stripExport(node.signature);
-  const marker = `${node.name}(`;
-  const index = signature.indexOf(marker);
-  if (index <= 0) return signature;
-  const prefix = signature.slice(0, index);
-  // Keep the accessor keyword: `get size()` is `get` + `size(`.
-  const keyword = /(?:get|set)\s+$/.exec(prefix);
-  const head = keyword === null ? "" : keyword[0].trim() + " ";
-  return head + signature.slice(index);
-}
-
-function memberSignature(node: SymbolNode): string {
+/**
+ * Signature with the receiver the enclosing declaration already names removed.
+ *
+ * 'SessionStore.refresh(token: string)' -> 'refresh(token: string)'. The
+ * accessor keyword is kept: 'get size()' is 'get' + 'size('.
+ */
+function displaySignature(node: SymbolNode): string {
   const signature = stripExport(node.signature);
   const dot = node.qualifiedName.lastIndexOf(".");
   if (dot < 0) return signature;
   const receiver = node.qualifiedName.slice(0, dot);
   const prefix = `${receiver}.`;
-  return signature.startsWith(prefix) ? signature.slice(prefix.length) : signature;
+  if (!signature.startsWith(prefix)) return signature;
+  return signature.slice(prefix.length);
 }
 
 /** Declaration text (no body), preserving the source's own line structure. */
-function declarationText(source: string, node: SymbolNode): string {
+function declarationText(source: SourceText, node: SymbolNode): string {
   const raw = source.slice(node.range.start, node.body?.start ?? node.range.end);
   const lines = raw.split("\n");
   const first = lines[0];

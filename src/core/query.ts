@@ -10,9 +10,9 @@
  * as a standard-library call that deps does not cover.
  */
 import type { LspSession } from "../lsp/session.ts";
+import { profileForServer, type LanguageProfile } from "../languages/profile.ts";
 import { QueryContext, QueryError, readinessNotes, summaryOf } from "./context.ts";
 import { collectOutgoingCalls, resolveCall } from "./dependency-resolution.ts";
-import { isImportPosition } from "../syntax/ts-syntax.ts";
 import { renderSkeleton, type SkeletonOptions } from "./skeleton.ts";
 import { flatten, type DocumentSkeleton, type SymbolNode } from "./symbols.ts";
 import type {
@@ -32,9 +32,16 @@ import type {
 
 export class QueryEngine {
   readonly #context: QueryContext;
+  readonly #profile: LanguageProfile;
 
   constructor(session: LspSession, options: QueryEngineOptions = {}) {
     this.#context = new QueryContext(session, options);
+    this.#profile = options.profile ?? profileForServer(session.serverName);
+  }
+
+  /** The language profile this engine answers with. */
+  get profile(): LanguageProfile {
+    return this.#profile;
   }
 
   get session(): LspSession {
@@ -53,10 +60,11 @@ export class QueryEngine {
     const exports = exportNames(tree.symbols);
     const rendered = renderSkeleton({
       path: tree.path,
-      text: tree.source.text,
+      source: tree.source,
       symbols: tree.symbols,
       globals: tree.globals,
       exports,
+      profile: tree.profile,
       ...(options === undefined ? {} : { options }),
     });
     return {
@@ -64,7 +72,7 @@ export class QueryEngine {
       text: rendered.text,
       symbols: flatten(tree.symbols).map((node) => summaryOf(tree, node)),
       exports,
-      notes: readinessNotes(readiness, tree.symbols.length),
+      notes: readinessNotes(readiness, tree.symbols.length, tree.profile),
     };
   }
 
@@ -83,7 +91,7 @@ export class QueryEngine {
     return {
       function: summaryOf(tree, node),
       text: tree.source.slice(node.range.start, node.range.end).replace(/\s+$/, "") + "\n",
-      notes: readinessNotes(readiness, 1),
+      notes: readinessNotes(readiness, 1, this.#profile),
     };
   }
 
@@ -97,7 +105,7 @@ export class QueryEngine {
     const unresolved: UnresolvedCall[] = [];
     let stdlib = 0;
     for (const call of report.calls) {
-      const resolution = await resolveCall(this.#context.session, call);
+      const resolution = await resolveCall(this.#context.session, call, tree.profile);
       if (resolution.kind === "unresolved") {
         unresolved.push(resolution.unresolved);
         continue;
@@ -112,7 +120,7 @@ export class QueryEngine {
         else existing.callSites.push(...entry.callSites);
       }
     }
-    const notes: QueryNote[] = [...readinessNotes(readiness, 1)];
+    const notes: QueryNote[] = [...readinessNotes(readiness, 1, this.#profile)];
     notes.push({
       kind: "dynamic-dispatch",
       message:
@@ -135,7 +143,7 @@ export class QueryEngine {
     if (stdlib > 0) {
       notes.push({
         kind: "stdlib",
-        message: `${stdlib} call(s) to the standard library (lib.*.d.ts) were omitted as out of scope for deps.`,
+        message: this.#profile.stdlibNote(stdlib),
       });
     }
     if (unresolved.length > 0) {
@@ -155,7 +163,7 @@ export class QueryEngine {
     const report = await collectOutgoingCalls(this.#context.session, node, tree);
     const grouped = new Map<string, CalleesResponse["callees"][number]>();
     for (const call of report.calls) {
-      const resolution = await resolveCall(this.#context.session, call);
+      const resolution = await resolveCall(this.#context.session, call, tree.profile);
       if (resolution.kind !== "resolved") continue;
       for (const entry of resolution.entries) {
         const existing = grouped.get(entry.id);
@@ -172,7 +180,7 @@ export class QueryEngine {
         }
       }
     }
-    return { function: summaryOf(tree, node), callees: [...grouped.values()], notes: readinessNotes(readiness, 1) };
+    return { function: summaryOf(tree, node), callees: [...grouped.values()], notes: readinessNotes(readiness, 1, this.#profile) };
   }
 
   /** Who calls this function; 0 results always come with the caveat. */
@@ -182,7 +190,7 @@ export class QueryEngine {
     const tree = await this.#context.tree(filePath);
     const node = this.#context.require(tree, selector);
     const usages: UsagesResponse["usages"] = [];
-    const notes: QueryNote[] = [...readinessNotes(readiness, 1)];
+    const notes: QueryNote[] = [...readinessNotes(readiness, 1, this.#profile)];
     if (session.hasCallHierarchy) {
       const items = await session.prepareCallHierarchy(node.path, node.nameOffset);
       const item = items[0];
@@ -212,7 +220,8 @@ export class QueryEngine {
         const relative = session.relativePath(reference.path);
         // A reference request includes the import specifier that binds the
         // name; those are not *call* sites and would double-count every caller.
-        if (isImportPosition(relative, document.source, reference.range)) continue;
+        // Only TypeScript has such a construct, so the profile decides.
+        if (tree.profile.isImportReference?.(relative, document.source, reference.range) === true) continue;
         usages.push({
           path: relative,
           line: document.source.lineAt(reference.range.start),
@@ -240,7 +249,7 @@ export class QueryEngine {
       if (hits.length >= limit) break;
       if (item.path === null) continue;
       const relative = session.relativePath(item.path);
-      if (isExternal(relative)) continue;
+      if (this.#profile.isExternalPath(relative)) continue;
       const score = scoreOf(item.name, needle);
       if (score === 0) continue;
       if (hits.some((hit) => hit.name === item.name && hit.path === relative)) continue;
@@ -260,17 +269,13 @@ export class QueryEngine {
       hits.push({ ...summaryOf(tree, node), score });
     }
     hits.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
-    return { query, hits, notes: readinessNotes(readiness, hits.length) };
+    return { query, hits, notes: readinessNotes(readiness, hits.length, this.#profile) };
   }
 
   /** Drop memoised trees, e.g. after an edit. */
   invalidate(filePath?: string): void {
     this.#context.invalidate(filePath);
   }
-}
-
-function isExternal(path: string): boolean {
-  return path.includes("node_modules/") || path.endsWith(".d.ts");
 }
 
 function exportNames(symbols: SymbolNode[]): string[] {

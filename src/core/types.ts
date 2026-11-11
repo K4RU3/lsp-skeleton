@@ -98,6 +98,11 @@ export interface SearchResponse {
 }
 
 export interface QueryEngineOptions {
+  /**
+   * Language profile to answer with. Defaults to the profile of the server
+   * the session is running, so callers never pass one.
+   */
+  profile?: import("../languages/profile.ts").LanguageProfile;
   /** Wait for project load before the first query (default true). */
   waitForProjectLoad?: boolean;
   /** Readiness budget per query, in milliseconds. */

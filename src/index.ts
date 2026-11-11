@@ -1,5 +1,5 @@
 /**
- * lsp-skeleton: LSP-backed skeleton / deps / expand for TypeScript.
+ * lsp-skeleton: LSP-backed skeleton / deps / expand for TypeScript and Rust.
  *
  * The public surface is deliberately small and adapter-neutral:
  *  - {@link createWorkspace} starts a session and returns a query engine;

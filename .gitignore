@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# Rust fixture build output (rust-analyzer really does run cargo check here)
+fixtures/*/target/
+fixtures/*/Cargo.lock
 .npm-cache/
 .cache/
 .probe/

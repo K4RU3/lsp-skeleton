@@ -1,0 +1,14 @@
+[package]
+name = "fixture_crate"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fixture_crate"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fixture_crate"
+path = "src/main.rs"
+
+[dependencies]

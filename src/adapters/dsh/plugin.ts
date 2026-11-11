@@ -218,7 +218,7 @@ export function apply(ctx: Context, config: AdapterConfig = {}): void {
   ctx.tools.register(
     defineTool({
       name: "lsp_search",
-      description: "Search workspace symbols by name (exact, prefix, or substring). node_modules is excluded from expand/deps/usages/callees, but skeleton can read it."
+      description: "Search workspace symbols by name (exact, prefix, or substring). node_modules is excluded from expand/deps/usages/callees, but skeleton can read it.",
       parameters: {
         query: { type: "string", required: true, description: "Symbol name or fragment." },
         limit: { type: "number", description: "Maximum hits (default 20)." },

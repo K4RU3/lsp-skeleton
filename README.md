@@ -1,7 +1,7 @@
 # lsp-skeleton
 
-TypeScript/JavaScript のコードベースを少ないコンテキストで把握するための、
-LSP（tsserver の名前解決）を土台にした **skeleton / deps / expand** ツール。
+TypeScript/JavaScript と Rust のコードベースを少ないコンテキストで把握するための、
+LSP（tsserver / rust-analyzer の名前解決）を土台にした **skeleton / deps / expand** ツール。
 
 - **共通部** (`src/lsp`, `src/core`, `src/syntax`): LSP セッションと意味単位の問い合わせ API。LSP のメソッド名・JSON-RPC・行/列位置を外へ漏らさない。
 - **MCP アダプタ** (`src/adapters/mcp`): 共通部を MCP ツールとして公開する薄い層。
@@ -26,8 +26,11 @@ tsconfig の `paths` エイリアス、オーバーロード選択、メソッ�
 セッション層  src/lsp/*               initialize / 能力交渉 / 文書同期 / 位置変換 / プロセス管理
         │  stdio（将来: socket / 常駐化はこの層の内側だけで差し替え）
         ▼
-言語サーバ (typescript-language-server / vtsls)
+言語サーバ (typescript-language-server / vtsls / rust-analyzer)
 ```
+
+言語差は `src/languages/*` の**言語プロファイル**に閉じる。セッション層・トランスポート・
+結果キャッシュ・アダプタ層は言語を知らず、問い合わせ層は「いま何語か」を尋ねない。
 
 1 セッション = 1 ワークスペース。セッションは使い捨て可能で、永続データを持たない。
 結果キャッシュ（skeleton の永続化）はセッションの外に置き、ファイル内容ハッシュを
@@ -104,7 +107,11 @@ node --experimental-strip-types src/cli.ts --root fixtures/fixture-project skele
 node --experimental-strip-types src/cli.ts --root fixtures/fixture-project deps src/app.ts main
 node --experimental-strip-types src/cli.ts --root fixtures/fixture-project expand src/app.ts main
 node --experimental-strip-types src/cli.ts --root fixtures/fixture-project --cache .cache skeleton src/app.ts
+node --experimental-strip-types src/cli.ts --root fixtures/rust-project --server rust-analyzer skeleton src/lib.rs
 ```
+
+`--server` は `typescript-language-server` / `vtsls` / `rust-analyzer`。
+`rust-analyzer` は PATH 上の実行ファイルを使う（`LSP_SKELETON_RUST_ANALYZER` で差し替え可能）。
 
 ### MCP
 
@@ -132,12 +139,20 @@ dsh plugin --profile web add /path/to/lsp-skeleton
 ```sh
 npm install
 npm run build
-npm test          # フィクスチャに対する受け入れテスト（46 件）
+npm test          # フィクスチャに対する受け入れテスト（52 件。rust-analyzer が無い環境では Rust 分を skip）
 npm run probe     # §8 の実測（両サーバの capacity / 起動時間）
 ```
 
 `fixtures/fixture-project` は検証用プロジェクト。`.d.ts` 依存は
 `npm run fixture:setup` が生成する（テストは自動で生成する）。
+`fixtures/rust-project` は Rust 用の自前クレート（struct / enum / union / trait / impl /
+type alias / const / static / macro_rules / mod を 1 つずつ含む）。
+
+### Rust 対応の現状
+
+R1（登録 + skeleton）完了。`deps` / `expand` / `usages` / `callees` の Rust 対応は
+R2 / R3 で入る。現時点で Rust ファイルに対してそれらを呼ぶと、プロファイルが
+`resolution` を持つため解決自体は走るが、検証済みなのは skeleton までである。
 
 ## 限界（出力にも明示される）
 
