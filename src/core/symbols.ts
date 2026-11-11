@@ -79,7 +79,7 @@ export async function buildSymbolTree(session: LspSession, filePath: string): Pr
   const source = document.source;
   const raw = await session.documentSymbols(filePath);
   const symbols = await Promise.all(
-    raw.map((symbol) => convertSymbol(session, relativePath, source, symbol, undefined)),
+    inDocumentOrder(raw).map((symbol) => convertSymbol(session, relativePath, source, symbol, undefined)),
   );
   const globals = collectGlobals(relativePath, source, symbols);
   return { path: relativePath, source, symbols, globals };
@@ -128,10 +128,28 @@ async function convertSymbol(
     const first = parameterNames(path, source, symbol.range)[0];
     if (first !== undefined) node.parameterName = first;
   }
-  for (const child of symbol.children) {
+  for (const child of inDocumentOrder(symbol.children)) {
     children.push(await convertSymbol(session, path, source, child, node));
   }
   return node;
+}
+
+/**
+ * Copy a sibling list into source order.
+ *
+ * `documentSymbol` is *not* ordered by position: both supported servers build
+ * the answer from TypeScript's navigation tree, which sorts children
+ * alphabetically (`compareChildren` in typescript.js). Rendering that list as
+ * received made declarations appear in name order, while `globals` (built from
+ * the AST's statement list in collectGlobals) stayed in source order -- which is
+ * why imports looked right and the declarations looked reversed.
+ *
+ * This sorts the *raw* ranges, before SymbolNode widens them: declarationStart
+ * stretches a member's range to its enclosing top-level statement, so sorting
+ * converted nodes would tie every member of a class on the same offset.
+ */
+function inDocumentOrder(symbols: SessionSymbol[]): SessionSymbol[] {
+  return [...symbols].sort((left, right) => left.range.start - right.range.start);
 }
 
 async function resolveSignature(

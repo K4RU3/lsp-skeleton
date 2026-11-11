@@ -26,8 +26,8 @@ test("skeleton keeps signatures and folds bodies", async () => {
   // JSDoc summary is preserved.
   assert.match(skeleton.text, /\/\*\* Refresh the session for a token and return the new size\. \*\//);
 
-  // Exports summary.
-  assert.match(skeleton.text, /\/\/ exports: makeDefaultStore, SessionStore/);
+  // Exports summary, in source order (SessionStore is declared first).
+  assert.match(skeleton.text, /\/\/ exports: SessionStore, makeDefaultStore/);
 });
 
 test("skeleton includes type definitions, globals and the export list", async () => {
@@ -37,7 +37,7 @@ test("skeleton includes type definitions, globals and the export list", async ()
   assert.match(skeleton.text, /export type Result<T> =/);
   assert.match(skeleton.text, /export enum Level \{/);
   assert.match(skeleton.text, /export class ConsoleNotifier implements Notifier/);
-  assert.match(skeleton.text, /\/\/ exports: ConsoleNotifier, Level, Notifier, Result, wrap/);
+  assert.match(skeleton.text, /\/\/ exports: Notifier, ConsoleNotifier, Result, Level, wrap/);
   // The arrow function assigned to a const keeps the checker's function type.
   assert.match(skeleton.text, /const formatBytes: \(bytes: number\) => string/);
 });
@@ -48,6 +48,36 @@ test("skeleton keeps top-level statements of a module", async () => {
   assert.match(skeleton.text, /import \{ SessionStore \} from "\.\/auth\/session";/);
   assert.match(skeleton.text, /const handlers: \(\(\) => void\)\[\]/);
   assert.match(skeleton.text, /export function main\(tokens: string\[\]\): number/);
+});
+
+test("skeleton renders declarations in source order, not name order", async () => {
+  const { engine } = await fixtureWorkspace();
+
+  // documentSymbol sorts siblings alphabetically (TypeScript navtree order);
+  // the skeleton must restore the file order instead.
+  const impl = await engine.skeleton("src/lib/impl.ts");
+  assert.deepEqual(
+    impl.symbols.filter((symbol) => !symbol.qualifiedName.includes(".")).map((symbol) => symbol.name),
+    ["Notifier", "ConsoleNotifier", "formatBytes", "Result", "Level", "wrap"],
+  );
+
+  const session = await engine.skeleton("src/auth/session.ts");
+  assert.deepEqual(
+    session.symbols.filter((symbol) => !symbol.qualifiedName.includes(".")).map((symbol) => symbol.name),
+    ["SessionStore", "makeDefaultStore"],
+  );
+
+  // Class members keep their own order too: fields, constructor, method, accessors.
+  assert.deepEqual(
+    session.symbols
+      .filter((symbol) => /^SessionStore\.[^.]+$/.test(symbol.qualifiedName))
+      .map((symbol) => symbol.name),
+    ["notifier", "lastSize", "constructor", "refresh", "size", "size"],
+  );
+
+  // Globals and declarations agree on order: imports come first, then the class.
+  const classAt = session.text.indexOf("export class SessionStore");
+  assert.ok(session.text.indexOf('from "../lib/barrel"') < classAt, "imports precede declarations");
 });
 
 test("skeleton symbols carry stable function ids", async () => {

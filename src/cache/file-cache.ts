@@ -22,9 +22,25 @@ export interface CacheEntry<T> {
 export interface FileCacheOptions {
   /** Directory holding cache files. Created on first write. */
   directory: string;
-  /** Format version; entries from another version are ignored. */
+  /**
+   * Format version; entries from another version are ignored.
+   *
+   * Bump when the *shape* of a cached value changes meaning, not just when the
+   * file content does: the key only covers the source text, so a semantic fix
+   * would otherwise keep replaying stale entries. Version 2 sorts symbols into
+   * document order (see symbols.ts), so entries written before that fix must be
+   * discarded rather than served. See {@link CACHE_VERSION}.
+   */
   version?: number;
 }
+
+/**
+ * Cache format version. Bump whenever a cached value's meaning changes.
+ *
+ * 2: symbol trees are stored in document order (previously documentSymbol's
+ *    alphabetical order), so version 1 entries would render reversed.
+ */
+export const CACHE_VERSION = 2;
 
 /** A content-addressed JSON file cache. */
 export class FileCache {
@@ -33,7 +49,7 @@ export class FileCache {
 
   constructor(options: FileCacheOptions) {
     this.#directory = path.resolve(options.directory);
-    this.#version = options.version ?? 1;
+    this.#version = options.version ?? CACHE_VERSION;
   }
 
   get directory(): string {
