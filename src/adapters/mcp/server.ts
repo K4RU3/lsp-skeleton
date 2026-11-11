@@ -80,7 +80,7 @@ export function createMcpServer(options: McpAdapterOptions = {}): {
   const fileArgument = z.string().describe("File path, relative to the workspace root.");
   const symbolArgument = z
     .string()
-    .describe("Symbol selector: function id (path#name@hash), qualified name (Class.method), or bare name.");
+    .describe("Symbol selector: function id (path#name@hash), qualified name (Class.method), or bare name (hash optional).");
 
   const defaultRoot = options.root;
 
@@ -196,7 +196,7 @@ export function createMcpServer(options: McpAdapterOptions = {}): {
     "search",
     {
       title: "Search symbols",
-      description: "Search workspace symbols by name (exact, prefix, or substring). node_modules is excluded.",
+      description: "Search workspace symbols by name (exact, prefix, or substring). node_modules is excluded from expand/deps/usages/callees, but skeleton can read it."
       inputSchema: {
         query: z.string().describe("Symbol name or fragment."),
         root: rootArgument,
