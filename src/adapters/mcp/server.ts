@@ -196,7 +196,7 @@ export function createMcpServer(options: McpAdapterOptions = {}): {
     "search",
     {
       title: "Search symbols",
-      description: "Search workspace symbols by name (exact, prefix, or substring). node_modules is excluded from expand/deps/usages/callees, but skeleton can read it."
+      description: "Search workspace symbols by name (exact, prefix, or substring). node_modules is excluded from expand/deps/usages/callees, but skeleton can read it.",
       inputSchema: {
         query: z.string().describe("Symbol name or fragment."),
         root: rootArgument,
