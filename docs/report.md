@@ -221,7 +221,7 @@ node --experimental-strip-types src/cli.ts --root fixtures/fixture-project expan
 | `fixtures/rust-project/` | 検証用の自前クレート（struct / enum / union / trait / impl / type alias / const / static / macro_rules / mod） |
 | `test/rust.test.ts` | Rust の受け入れテスト（5 件）。rust-analyzer が無い環境では skip |
 
-**コミット**: `837011a` feat(rust): add rust-analyzer and Rust skeleton support
+**コミット**: `cbb5541` feat(rust): add rust-analyzer and Rust skeleton support
 
 **動作確認**
 
