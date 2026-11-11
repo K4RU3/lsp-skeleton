@@ -139,7 +139,7 @@ dsh plugin --profile web add /path/to/lsp-skeleton
 ```sh
 npm install
 npm run build
-npm test          # フィクスチャに対する受け入れテスト（52 件。rust-analyzer が無い環境では Rust 分を skip）
+npm test          # フィクスチャに対する受け入れテスト（61 件。rust-analyzer が無い環境では Rust 分を skip）
 npm run probe     # §8 の実測（両サーバの capacity / 起動時間）
 ```
 
@@ -150,9 +150,9 @@ type alias / const / static / macro_rules / mod を 1 つずつ含む）。
 
 ### Rust 対応の現状
 
-R1（登録 + skeleton）完了。`deps` / `expand` / `usages` / `callees` の Rust 対応は
-R2 / R3 で入る。現時点で Rust ファイルに対してそれらを呼ぶと、プロファイルが
-`resolution` を持つため解決自体は走るが、検証済みなのは skeleton までである。
+R1（登録 + skeleton）と R2（expand）完了。`deps` / `usages` / `callees` の Rust 対応は
+R3 で入る。現時点で Rust ファイルに対してそれらを呼ぶと、プロファイルが
+`resolution` を持つため解決自体は走るが、検証済みなのは skeleton と expand までである。
 
 ## 限界（出力にも明示される）
 

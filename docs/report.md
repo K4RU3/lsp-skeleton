@@ -296,6 +296,74 @@ skeleton 1 回目 13–25ms / 2 回目以降 0–1ms / Shiritori 全 15 ファ�
   `impl ` 接頭辞に依存しており、サーバがこの命名を変えたら壊れる。
 ---
 
+## R2: Rust expand
+
+**追加・変更したファイル**
+
+| ファイル | 役割 |
+|---|---|
+| `src/languages/profile.ts` | `declarationEnd(facts)` を追加（宣言の終端は言語ごとに違う） |
+| `src/languages/rust-profile.ts` | 行頭まで戻す `declarationStart`、`,`/`;` を含める `declarationEnd` |
+| `src/languages/typescript-profile.ts` | `declarationEnd` は `range.end` のまま（TS は元から終端を含む） |
+| `src/core/symbols.ts` | 範囲解決を start → end の順に整理（profile が広げた範囲を見て終端を決める） |
+| `fixtures/rust-project/src/lib.rs` | フィールドに日本語ドキュメントコメントを追加（マルチバイトの回帰用） |
+| `test/rust-expand.test.ts` | Rust の expand テスト（4 件） |
+
+**コミット**: 本節の末尾に記載（R2 のコミット）
+
+**動作確認**
+
+```sh
+LSP_SKELETON_RUST_ANALYZER=/path/to/rust-analyzer \
+  node --experimental-strip-types src/cli.ts --root fixtures/rust-project \
+  --server rust-analyzer expand src/models.rs Room.add_word
+```
+
+```
+    /// Add a word, rejecting duplicates.
+    pub fn add_word(&mut self, word: String) -> Result<(), super::StoreError> {
+        if self.words.contains(&word) {
+            return Err(super::StoreError::Duplicate(word));
+        }
+        self.words.push(word);
+        Ok(())
+    }
+```
+
+受け入れ条件:
+
+| 条件 | 結果 |
+|---|---|
+| 本体込みの宣言が返る | `fn` / `struct` / `enum` / `union` / `trait` / `impl` のメソッドすべてで確認 |
+| 属性・ドキュメントコメントを含む | `#[tokio::main]`、`#[derive(...)]`、`#[error("...")]`、`///` を含む |
+| 次の宣言を含まない | 全 556 シンボルで確認（子孫以外が範囲に入らない） |
+| 宣言として単体で成立する | 波括弧の対応を全件検証（0 件の不整合） |
+| インデントが保たれる | ネストしたメソッドが行頭から始まる |
+| マルチバイトで欠けない | 日本語ドキュメントコメントが無傷 |
+
+**実測**: 556 シンボル（Shiritori 496 + fixture 60）の expand を全件機械検証。
+詳細は [measurements.md](measurements.md) の「expand のための範囲」。
+
+**R2 で分かったこと（設計に効いたもの）**
+
+1. **`range.start` はインデントを含まない。** 496 件中 325 件が行頭から 4/8/12 桁ずれた位置から
+   始まる。宣言の行頭まで戻さないと、メソッドだけ左に飛び出す。
+2. **`range.end` は末尾の `,` / `;` を含まないことがある。** 実測で `property` 81/81、
+   `enum-member` 24/24 が該当。構造体のフィールドを単体で展開すると `pub text: String` で
+   終わり、単体では成立しない。skeleton は影響を受けない（行として描くだけ）が、expand は受ける。
+3. この 2 つは**どちらも言語プロファイルの仕事**にした。`session` / `cache` / アダプタは無変更。
+   セッション層への新しい変更は **0 行**（R1 で入れた拡張点のみ）。
+
+**残課題（R2 の範囲外）**
+
+- 文字列リテラル内の `{` を数える検査はテスト側の都合。expand 自体は `SourceText.slice` で
+  切っているだけなので、内容は常にソースと一致する。
+- `expand` の出力は宣言の原文そのまま（整形しない）。インデントはソースのままなので、
+  ネストした宣言を単体で貼ると 4 桁下がったままになる。これは意図した挙動（原文忠実）だが、
+  「貼ってそのまま動く」ことを期待する使い方には向かない。
+
+---
+
 ## 横断的な実測（§8）
 
 `npm run probe` の結果は [measurements.md](measurements.md) にまとめた。要点:

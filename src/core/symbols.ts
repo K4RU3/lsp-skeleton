@@ -115,7 +115,11 @@ async function convertSymbol(
     range: symbol.range,
   };
   facts.nameOffset = profile.nameOffset(facts);
-  facts.range = { start: profile.declarationStart(facts), end: symbol.range.end };
+  // Start first: declarationEnd() is handed a range whose start is already the
+  // profile's answer, so an end can be measured from the declaration itself.
+  const start = profile.declarationStart(facts);
+  facts.range = { start, end: symbol.range.end };
+  facts.range = { start, end: profile.declarationEnd(facts) };
 
   // Only the profile knows whether the server's hover carries anything its
   // describe() cannot get otherwise; skipping it saves one round trip per

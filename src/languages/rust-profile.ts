@@ -80,6 +80,9 @@ const LAYOUTS = new Map<string, RenderLayout>([
   ["module", "block"],
 ]);
 
+/** Kinds whose declaration can end at a ',' or ';' the server does not report. */
+const LINE_TERMINATED = new Set<string>(["property", "enum-member", "const", "static", "type-alias"]);
+
 export const rustProfile: LanguageProfile = {
   id: "rust",
   servers: ["rust-analyzer"],
@@ -198,11 +201,30 @@ export const rustProfile: LanguageProfile = {
     return symbol.selectionRange.start;
   },
 
-  declarationStart({ symbol }: SymbolFacts): number {
+  declarationStart({ source, symbol }: SymbolFacts): number {
     // documentSymbol already starts at the first attribute or doc comment (the
     // '#[tokio::main]' above main, the '///' above a const), and that is what
     // expand must return.
-    return symbol.range.start;
+    const start = source.toUtf16(symbol.range.start);
+    // A nested declaration starts at its first non-space character, so expand
+    // would print a member flush left while its body stayed indented. Taking
+    // the indentation of the line makes the answer the declaration as written.
+    const lineStart = source.text.lastIndexOf("\n", start - 1) + 1;
+    const indent = source.text.slice(lineStart, start);
+    return indent.trim() === "" ? source.toByte(lineStart) : symbol.range.start;
+  },
+
+  declarationEnd({ source, symbol, kind }: SymbolFacts): number {
+    // Measured: rust-analyzer stops a struct field and an enum variant at the
+    // end of the type and leaves the ',' out, and the same trimming shows up
+    // for other line-shaped declarations. Including the terminator is what
+    // makes the expanded text a declaration that could stand on its own.
+    if (!LINE_TERMINATED.has(kind)) return symbol.range.end;
+    const text = source.text;
+    let at = source.toUtf16(symbol.range.end);
+    while (text[at] === " " || text[at] === "\t") at += 1;
+    const next = text[at];
+    return next === "," || next === ";" ? source.toByte(at + 1) : symbol.range.end;
   },
 
   body({ source, symbol, kind }: SymbolFacts): BodySpan | undefined {

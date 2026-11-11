@@ -98,6 +98,18 @@ export interface LanguageProfile {
   nameOffset(facts: SymbolFacts): number;
   /** Start of the whole declaration, including modifiers/docs before it. */
   declarationStart(facts: SymbolFacts): number;
+  /**
+   * End of the whole declaration.
+   *
+   * Called with facts.range already set to (declarationStart, documentSymbol's
+   * end), so the profile sees the declaration it is describing.
+   *
+   * Usually documentSymbol's range already ends at the terminating token, but
+   * not always: rust-analyzer stops a struct field at its type and leaves the
+   * comma out, so expanding the field would produce a declaration that cannot
+   * stand on its own. The profile is where that per-language detail belongs.
+   */
+  declarationEnd(facts: SymbolFacts): number;
   /** Foldable body, or undefined when the declaration has none. */
   body(facts: SymbolFacts): BodySpan | undefined;
   /** Whether the declaration is visible outside its module. */

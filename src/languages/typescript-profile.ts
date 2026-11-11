@@ -105,6 +105,12 @@ export const typescriptProfile: LanguageProfile = {
     return declarationStart(filePath, source, symbol.range);
   },
 
+  declarationEnd({ symbol }: SymbolFacts): number {
+    // documentSymbol already reports the declaration through its last token for
+    // TypeScript; nothing to widen.
+    return symbol.range.end;
+  },
+
   body({ filePath, source, symbol }: SymbolFacts): BodySpan | undefined {
     return bodyOf(filePath, source, symbol.range);
   },

@@ -21,6 +21,7 @@ pub enum SearchMode {
 /// A stored word plus its metadata.
 #[derive(Debug, Clone)]
 pub struct Word {
+    /// 単語の本文。マルチバイトでも欠けないこと。
     pub text: String,
     pub score: u32,
 }
