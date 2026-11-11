@@ -309,7 +309,7 @@ skeleton 1 回目 13–25ms / 2 回目以降 0–1ms / Shiritori 全 15 ファ�
 | `fixtures/rust-project/src/lib.rs` | フィールドに日本語ドキュメントコメントを追加（マルチバイトの回帰用） |
 | `test/rust-expand.test.ts` | Rust の expand テスト（4 件） |
 
-**コミット**: 本節の末尾に記載（R2 のコミット）
+**コミット**: `7adf35d` feat(rust): expand whole Rust declarations
 
 **動作確認**
 
